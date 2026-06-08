@@ -2,6 +2,22 @@
 
 This repository contains a course-demo-scale reproduction of *Generative Agents: Interactive Simulacra of Human Behavior*.
 
+## For Reviewers
+
+If you only want to pull the code and run the demo locally:
+
+```bash
+git clone https://github.com/guojiageng99/three.git
+cd three
+```
+
+Then:
+
+1. Start the backend on `127.0.0.1:8000`
+2. Start the frontend on `localhost:3000`
+3. Open `http://localhost:3000`
+4. Advance the simulation from the UI and observe movement, memory, dialogue, and reflection
+
 ## Project Scope
 
 The system focuses on a minimum complete cognitive loop for classroom demonstration:
@@ -24,6 +40,18 @@ The built-in storyline is stable for recording and presentation:
 
 This makes the demo easy to explain and repeat during a 10-minute course presentation.
 
+## What To Look At In The Demo
+
+When reviewing the project, focus on these behaviors:
+
+- agents move between locations according to schedule
+- each agent keeps its own memory stream
+- later actions and dialogue depend on recalled memories
+- information spreads from one agent to another over time
+- once enough social information accumulates, the system generates reflection
+
+This is a teaching demo, so the goal is not a giant open-world simulation. The goal is to show the core cognitive loop of generative agents in a small, repeatable scenario.
+
 ## Tech Stack
 
 - Frontend: Next.js + React
@@ -34,6 +62,17 @@ This makes the demo easy to explain and repeat during a 10-minute course present
 
 Python `3.10+` is required. The current local setup was verified with Python `3.12.4`.
 If you previously created `backend/.venv` with Python `3.9`, delete that virtual environment and recreate it before installing dependencies.
+
+## Quick Start
+
+If you want the shortest path:
+
+1. Prepare Python `3.10+` and Node.js
+2. Install backend dependencies from `backend/requirements.txt`
+3. Install frontend dependencies from `frontend/package.json`
+4. Start backend on port `8000`
+5. Set `NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000`
+6. Start frontend and open `http://localhost:3000`
 
 ### Recommended Conda Setup
 
@@ -100,6 +139,16 @@ npm run dev
 
 Open `http://localhost:3000` after both services start.
 
+## Suggested Review Flow
+
+For a teammate or reviewer, this order is the easiest:
+
+1. Read this `README.md`
+2. Run backend and frontend locally
+3. Open the page and step through the built-in story
+4. Check `submission_docs/` for PPT, scripts, and report materials
+5. If needed, inspect `backend/app/` and `frontend/` for implementation details
+
 ## Optional LLM Mode
 
 The backend supports an OpenAI-compatible chat API.
@@ -121,3 +170,9 @@ Prepared course materials are under `submission_docs/`:
 - per-slide script
 - 10-minute video script
 - screenshots for the reports and slides
+
+## Short Explanation For Teammates
+
+You can forward this summary directly:
+
+> This project is a small classroom demo of Generative Agents. The frontend visualizes a town map and each agent's plan, memory, reasoning, and dialogue. The backend simulates schedule, memory retrieval, dialogue generation, and reflection. By default it can run without an API key using deterministic fallback logic, so it is easy to reproduce locally.
