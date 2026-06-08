@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+
+# Local media and generated deliverables
+1.mp4
+final_submission/
+作业模板/
