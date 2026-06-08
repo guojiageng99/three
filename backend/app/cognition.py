@@ -8,7 +8,7 @@ from datetime import datetime
 
 import httpx
 
-from .models import Agent, Location, MemoryEntry, PlanItem
+from .models import Agent, Location, MemoryEntry, PlanItem, RetrievalExplanation
 from .prompt_templates import (
     ACTION_SYSTEM_PROMPT,
     DIALOGUE_SYSTEM_PROMPT,
@@ -87,6 +87,25 @@ class AgentCognition:
         time_label: str,
         limit: int = 3,
     ) -> list[MemoryEntry]:
+        memories, _ = self.retrieve_memories_with_explanations(
+            agent=agent,
+            active_plan=active_plan,
+            current_location=current_location,
+            nearby_agents=nearby_agents,
+            time_label=time_label,
+            limit=limit,
+        )
+        return memories
+
+    def retrieve_memories_with_explanations(
+        self,
+        agent: Agent,
+        active_plan: PlanItem,
+        current_location: Location,
+        nearby_agents: list[Agent],
+        time_label: str,
+        limit: int = 3,
+    ) -> tuple[list[MemoryEntry], list[RetrievalExplanation]]:
         query_terms = self._tokenize(
             " ".join(
                 [
@@ -98,16 +117,36 @@ class AgentCognition:
                 ]
             )
         )
-        scored: list[tuple[float, MemoryEntry]] = []
+        scored: list[tuple[float, MemoryEntry, RetrievalExplanation]] = []
         for memory in agent.memory_bank:
             overlap = len(query_terms.intersection(self._tokenize(memory.text)))
+            importance_score = memory.importance * 0.45
             location_bonus = 0.18 if memory.location_id == current_location.id else 0.0
             social_bonus = 0.08 * sum(1 for other in nearby_agents if other.id in memory.related_agents)
             recency_bonus = self._recency_score(memory.timestamp, time_label)
-            score = memory.importance * 0.45 + recency_bonus * 0.2 + location_bonus + social_bonus + overlap * 0.06
-            scored.append((score, memory))
+            recency_score = recency_bonus * 0.2
+            keyword_score = overlap * 0.06
+            score = importance_score + recency_score + location_bonus + social_bonus + keyword_score
+            explanation = RetrievalExplanation(
+                memory_id=memory.id,
+                total_score=round(score, 4),
+                importance_score=round(importance_score, 4),
+                recency_score=round(recency_score, 4),
+                location_bonus=round(location_bonus, 4),
+                social_bonus=round(social_bonus, 4),
+                keyword_overlap_count=overlap,
+                explanation_tags=self._explanation_tags(
+                    importance_score=importance_score,
+                    recency_score=recency_score,
+                    location_bonus=location_bonus,
+                    social_bonus=social_bonus,
+                    overlap=overlap,
+                ),
+            )
+            scored.append((score, memory, explanation))
         scored.sort(key=lambda item: item[0], reverse=True)
-        return [memory for _, memory in scored[:limit]]
+        chosen = scored[:limit]
+        return [memory for _, memory, _ in chosen], [explanation for _, _, explanation in chosen]
 
     def generate_action(
         self,
@@ -343,6 +382,29 @@ class AgentCognition:
             return None
         text = str(value).strip()
         return text or None
+
+    def _explanation_tags(
+        self,
+        importance_score: float,
+        recency_score: float,
+        location_bonus: float,
+        social_bonus: float,
+        overlap: int,
+    ) -> list[str]:
+        tags: list[str] = []
+        if importance_score >= 0.3:
+            tags.append("high importance")
+        if recency_score >= 0.14:
+            tags.append("recent")
+        if location_bonus > 0:
+            tags.append("same location")
+        if social_bonus > 0:
+            tags.append("related to nearby agent")
+        if overlap >= 2:
+            tags.append("keyword overlap")
+        if not tags:
+            tags.append("baseline relevance")
+        return tags
 
     def _tokenize(self, text: str) -> set[str]:
         return {token for token in re.findall(r"[a-zA-Z']+", text.lower()) if len(token) > 2}

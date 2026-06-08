@@ -10,7 +10,32 @@ export async function postAction(path: string): Promise<void> {
   });
 }
 
+export async function postJson<TResponse>(path: string, body: unknown): Promise<TResponse> {
+  const response = await fetch(apiUrl(path), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  return (await response.json()) as TResponse;
+}
+
+export async function setSimulationSpeed(speedLabel: string): Promise<void> {
+  await postJson("/api/sim/speed", { speed_label: speedLabel });
+}
+
+export async function saveSimulationSnapshot(): Promise<void> {
+  await postAction("/api/sim/snapshot/save");
+}
+
+export async function loadSimulationSnapshot(): Promise<void> {
+  await postAction("/api/sim/snapshot/load");
+}
+
 export function websocketUrl(): string {
   return apiBase.replace("http://", "ws://").replace("https://", "wss://") + "/ws/state";
 }
-

@@ -4,10 +4,15 @@ import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from .simulation import engine
 
 app = FastAPI(title="Generative Agents Demo API")
+
+
+class SpeedRequest(BaseModel):
+    speed_label: str
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,6 +57,35 @@ def reset_simulation() -> dict:
     return {"ok": True}
 
 
+@app.post("/api/sim/speed")
+def set_simulation_speed(payload: SpeedRequest) -> dict:
+    active_speed_label = engine.set_speed(payload.speed_label)
+    return {
+        "ok": True,
+        "active_speed_label": active_speed_label,
+        "available_speed_labels": engine.snapshot().available_speed_labels,
+    }
+
+
+@app.post("/api/sim/snapshot/save")
+def save_simulation_snapshot() -> dict:
+    snapshot_status = engine.save_snapshot()
+    return {
+        "ok": True,
+        "snapshot_status": snapshot_status.model_dump(),
+    }
+
+
+@app.post("/api/sim/snapshot/load")
+def load_simulation_snapshot() -> dict:
+    snapshot_status = engine.load_snapshot()
+    return {
+        "ok": True,
+        "running": False,
+        "snapshot_status": snapshot_status.model_dump(),
+    }
+
+
 @app.websocket("/ws/state")
 async def websocket_state(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -61,4 +95,3 @@ async def websocket_state(websocket: WebSocket) -> None:
             await asyncio.sleep(1.0)
     except WebSocketDisconnect:
         return
-

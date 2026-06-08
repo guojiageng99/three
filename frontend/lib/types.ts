@@ -22,6 +22,17 @@ export type MemoryEntry = {
   related_agents: string[];
 };
 
+export type RetrievalExplanation = {
+  memory_id: string;
+  total_score: number;
+  importance_score: number;
+  recency_score: number;
+  location_bonus: number;
+  social_bonus: number;
+  keyword_overlap_count: number;
+  explanation_tags: string[];
+};
+
 export type Agent = {
   id: string;
   name: string;
@@ -37,6 +48,7 @@ export type Agent = {
   active_plan: PlanItem | null;
   recent_memories: MemoryEntry[];
   retrieved_memories: MemoryEntry[];
+  retrieval_explanations: RetrievalExplanation[];
   reflections: MemoryEntry[];
   reasoning_note: string | null;
 };
@@ -46,6 +58,23 @@ export type EventLog = {
   time: string;
   title: string;
   detail: string;
+  event_type: string;
+  actor_ids: string[];
+  location_id: string | null;
+  tick_count: number;
+};
+
+export type KnowledgeEdge = {
+  source_agent_id: string;
+  target_agent_id: string;
+  learned_at: string;
+  tick_count: number;
+};
+
+export type SnapshotStatus = {
+  exists: boolean;
+  label: string | null;
+  tick_count: number | null;
 };
 
 export type WorldState = {
@@ -58,4 +87,9 @@ export type WorldState = {
   locations: Location[];
   agents: Agent[];
   events: EventLog[];
+  knowledge_edges: KnowledgeEdge[];
+  knowledge_status: Record<string, string>;
+  active_speed_label: string;
+  available_speed_labels: string[];
+  snapshot_status: SnapshotStatus;
 };
