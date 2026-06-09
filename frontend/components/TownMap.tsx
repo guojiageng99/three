@@ -1,6 +1,7 @@
 "use client";
 
 import { Agent, Location } from "@/lib/types";
+import { formatActionText, formatLocationDescription, formatLocationName } from "@/lib/presenter";
 
 type TownMapProps = {
   agents: Agent[];
@@ -49,14 +50,14 @@ export function TownMap({ agents, locations, selectedAgentId, onSelectAgent, pha
           return (
             <div
               key={location.id}
-              className="location-tile"
-              style={{ left: `${location.x}%`, top: `${location.y}%` }}
+                className="location-tile"
+                style={{ left: `${location.x}%`, top: `${location.y}%` }}
             >
               <div className="location-topline">
-                <div className="location-name">{location.name}</div>
+                <div className="location-name">{formatLocationName(location.name)}</div>
                 <span className="occupancy-pill">{occupants.length} 人在此</span>
               </div>
-              <div className="location-desc">{location.description}</div>
+              <div className="location-desc">{formatLocationDescription(location.description)}</div>
               <div className="agent-stack">
                 {occupants.map((agent) => (
                   <button
@@ -64,12 +65,12 @@ export function TownMap({ agents, locations, selectedAgentId, onSelectAgent, pha
                     className={selectedAgentId === agent.id ? "agent-chip selected" : "agent-chip"}
                     style={{ backgroundColor: agent.color }}
                     onClick={() => onSelectAgent(agent.id)}
-                    title={agent.current_action}
+                    title={formatActionText(agent.current_action)}
                     type="button"
                     aria-pressed={selectedAgentId === agent.id}
                   >
                     <span className="agent-chip-name">{agent.name}</span>
-                    <span className="speech">{agent.current_action}</span>
+                    <span className="speech">{formatActionText(agent.current_action)}</span>
                   </button>
                 ))}
               </div>

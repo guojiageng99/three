@@ -10,6 +10,7 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
+.playwright-cli/
 
 # Local media and generated deliverables
 1.mp4

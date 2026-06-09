@@ -1,6 +1,20 @@
 "use client";
 
 import { Agent, EventLog, KnowledgeEdge, RetrievalExplanation, SnapshotStatus } from "@/lib/types";
+import {
+  formatActionText,
+  formatAgentId,
+  formatEventDetail,
+  formatEventTitle,
+  formatEventTypeLabel,
+  formatExplanationTag,
+  formatKnowledgeBadge,
+  formatLocationName,
+  formatModelMode,
+  formatPlanSummary,
+  formatRole,
+  formatText,
+} from "@/lib/presenter";
 
 type SidebarProps = {
   agent: Agent | null;
@@ -42,6 +56,7 @@ export function Sidebar({
   const explanationByMemoryId = new Map<string, RetrievalExplanation>(
     (agent?.retrieval_explanations ?? []).map((item) => [item.memory_id, item]),
   );
+  const primaryReflection = agent?.reflections[0] ?? null;
 
   return (
     <aside className="sidebar">
@@ -56,7 +71,7 @@ export function Sidebar({
           </div>
           <div>
             <span className="status-key">模式</span>
-            <strong>{llmEnabled ? llmModel : "Fallback"}</strong>
+            <strong>{formatModelMode(llmEnabled, llmModel)}</strong>
           </div>
           <div>
             <span className="status-key">速度</span>
@@ -82,21 +97,21 @@ export function Sidebar({
               <span className="agent-color-chip" style={{ backgroundColor: agent.color }} aria-hidden="true" />
               <div>
                 <h3>{agent.name}</h3>
-                <p className="agent-role">{agent.role}</p>
+                <p className="agent-role">{formatRole(agent.role)}</p>
               </div>
             </div>
-            <p className="agent-summary">{agent.profile_summary}</p>
+            <p className="agent-summary">{formatText(agent.profile_summary)}</p>
             <div className="fact-row">
-              <span className="fact-pill">{currentLocationName ?? "Unknown location"}</span>
-              <span className="fact-pill">{agent.knows_party ? "Knows gathering" : "No gathering knowledge"}</span>
+              <span className="fact-pill">{formatLocationName(currentLocationName)}</span>
+              <span className="fact-pill">{formatKnowledgeBadge(agent.knows_party)}</span>
             </div>
             <div className="callout-card">
               <span className="callout-label">当前行为</span>
-              <p>{agent.current_action}</p>
+              <p>{formatActionText(agent.current_action)}</p>
             </div>
             <div className="callout-card subtle">
               <span className="callout-label">最新话语</span>
-              <p>{agent.last_utterance ?? "当前情境下暂无发言。"} </p>
+              <p>{agent.last_utterance ? formatText(agent.last_utterance) : "当前情境下暂无发言。"} </p>
             </div>
           </>
         ) : (
@@ -105,17 +120,20 @@ export function Sidebar({
       </section>
 
       <section className="panel highlight-panel">
-        <div className="eyebrow">推理上下文</div>
+        <div className="eyebrow">此刻先看这三件事</div>
         {agent ? (
           <>
             <div className="callout-card bright">
               <span className="callout-label">当前计划</span>
-              <p>{agent.active_plan ? `${agent.active_plan.time_slot} ${agent.active_plan.summary}` : "当前没有激活计划"}</p>
+              <p>{agent.active_plan ? `${agent.active_plan.time_slot} ${formatPlanSummary(agent.active_plan.summary)}` : "当前没有激活计划"}</p>
             </div>
-            <p className="reasoning-copy">{agent.reasoning_note ?? "当前状态下暂无显式推理说明。"}</p>
+            <div className="callout-card">
+              <span className="callout-label">当前为什么这样行动</span>
+              <p>{agent.reasoning_note ? formatText(agent.reasoning_note) : "当前状态下暂无显式推理说明。"}</p>
+            </div>
             {phaseLabel ? (
               <div className="callout-card phase-callout">
-                <span className="callout-label">讲解重点</span>
+                <span className="callout-label">此阶段重点</span>
                 <p>{presenterCue ?? "可以结合这里的内容解释：当前记忆线索如何驱动角色行为。"}</p>
                 {nextFocus ? <p className="micro-copy emphasis">{nextFocus}</p> : null}
               </div>
@@ -131,10 +149,10 @@ export function Sidebar({
         {latestEvent ? (
           <>
             <div className="spotlight-header">
-              <strong>{latestEvent.title}</strong>
-              <span className={`event-type-pill spotlight ${latestEvent.event_type}`}>{latestEvent.event_type}</span>
+              <strong>{formatEventTitle(latestEvent.title)}</strong>
+              <span className={`event-type-pill spotlight ${latestEvent.event_type}`}>{formatEventTypeLabel(latestEvent.event_type)}</span>
             </div>
-            <p className="guide-copy">{latestEvent.detail}</p>
+            <p className="guide-copy">{formatEventDetail(latestEvent.detail)}</p>
             <p className="micro-copy">
               当前阶段：{phaseLabel ?? "未标注"} · {latestEvent.time}
             </p>
@@ -145,84 +163,18 @@ export function Sidebar({
       </section>
 
       <section className="panel">
-        <div className="eyebrow">完整计划</div>
+        <div className="eyebrow">传播与反思</div>
         {agent ? (
-          <ul className="list timeline-list">
-            {agent.plan.map((item) => (
-              <li
-                key={`${agent.id}-${item.time_slot}`}
-                className={agent.active_plan?.time_slot === item.time_slot ? "active-plan-row" : undefined}
-              >
-                <strong>{item.time_slot}</strong> {item.summary}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>尚未选择角色。</p>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="eyebrow">检索到的记忆</div>
-        {agent ? (
-          <ul className="list timeline-list">
-            {agent.retrieved_memories.length > 0 ? (
-              agent.retrieved_memories.map((memory) => (
-                <li key={memory.id} className="memory-explanation-row">
-                  <strong>{memory.timestamp}</strong>
-                  <div className="memory-explanation-body">
-                    <span>{memory.text}</span>
-                    <div className="tag-row">
-                      {(explanationByMemoryId.get(memory.id)?.explanation_tags ?? ["explanation unavailable"]).map((tag) => (
-                        <span className="mini-tag" key={`${memory.id}-${tag}`}>
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                    {explanationByMemoryId.get(memory.id) ? (
-                      <p className="score-copy">
-                        分数 {explanationByMemoryId.get(memory.id)?.total_score.toFixed(2)} · 关键词重叠{" "}
-                        {explanationByMemoryId.get(memory.id)?.keyword_overlap_count}
-                      </p>
-                    ) : null}
-                  </div>
-                </li>
-              ))
-            ) : (
-              <li>当前情境下没有检索到相关记忆。</li>
-            )}
-          </ul>
-        ) : (
-          <p>尚未选择角色。</p>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="eyebrow">近期记忆</div>
-        {agent ? (
-          <ul className="list timeline-list">
-            {agent.recent_memories.map((memory) => (
-              <li key={memory.id}>
-                <strong>{memory.timestamp}</strong>
-                <span>{memory.text}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>尚未选择角色。</p>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="eyebrow">反思结果</div>
-        {agent ? (
-          <ul className="list reflection-list">
-            {agent.reflections.length > 0 ? (
-              agent.reflections.map((memory) => <li key={memory.id}>{memory.text}</li>)
-            ) : (
-              <li>当前还没有反思生成。</li>
-            )}
-          </ul>
+          <>
+            <div className="callout-card">
+              <span className="callout-label">角色是否知道聚会信息</span>
+              <p>{agent.knows_party ? `${agent.name} 已经知道聚会信息。` : `${agent.name} 目前还不知道聚会信息。`}</p>
+            </div>
+            <div className="callout-card subtle">
+              <span className="callout-label">当前最重要的反思</span>
+              <p>{primaryReflection?.text ? formatText(primaryReflection.text) : "当前还没有形成高层反思，可以继续推进到 14:30 左右再看。"}</p>
+            </div>
+          </>
         ) : (
           <p>尚未选择角色。</p>
         )}
@@ -234,7 +186,7 @@ export function Sidebar({
           {Object.keys(knowledgeStatus).length > 0 ? (
             Object.entries(knowledgeStatus).map(([agentId, learnedAt]) => (
               <li key={agentId}>
-                {agentId} 在 {learnedAt} 获得信息
+                {formatAgentId(agentId)} 在 {learnedAt} 获得信息
               </li>
             ))
           ) : (
@@ -245,34 +197,106 @@ export function Sidebar({
           {knowledgeEdges.length > 0 ? (
             knowledgeEdges.map((edge) => (
               <p key={`${edge.source_agent_id}-${edge.target_agent_id}-${edge.tick_count}`}>
-                {edge.source_agent_id} -&gt; {edge.target_agent_id} · {edge.learned_at}
+                {formatAgentId(edge.source_agent_id)} -&gt; {formatAgentId(edge.target_agent_id)} · {edge.learned_at}
               </p>
             ))
           ) : (
             <p>当前还没有记录到传播链路。</p>
           )}
         </div>
-        <p className="micro-copy">
-          讲解时建议从上到下阅读这个面板，说明一次局部对话如何变成共享的全局事实。
-        </p>
+        <p className="micro-copy">这里最适合讲“局部对话如何一步步变成全局共享事实”。</p>
       </section>
 
-      <section className="panel">
-        <div className="eyebrow">事件时间线</div>
-        <ul className="list timeline-list">
-          {events.map((event) => (
-            <li key={event.id} className={`event-row event-${event.event_type}`}>
-              <strong>{event.time}</strong>
-              <div className="timeline-body">
-                <span className="event-type-pill">{event.event_type}</span>
-                <span>
-                  {event.title}: {event.detail}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <details className="panel collapsible-panel" open={Boolean(agent?.reflections.length)}>
+        <summary>展开认知细节（计划、记忆、时间线）</summary>
+        <div className="details-stack">
+          <section className="details-section">
+            <div className="eyebrow">完整计划</div>
+            {agent ? (
+              <ul className="list timeline-list">
+                {agent.plan.map((item) => (
+                  <li
+                    key={`${agent.id}-${item.time_slot}`}
+                    className={agent.active_plan?.time_slot === item.time_slot ? "active-plan-row" : undefined}
+                  >
+                    <strong>{item.time_slot}</strong> {formatPlanSummary(item.summary)}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>尚未选择角色。</p>
+            )}
+          </section>
+
+          <section className="details-section">
+            <div className="eyebrow">检索到的记忆</div>
+            {agent ? (
+              <ul className="list timeline-list">
+                {agent.retrieved_memories.length > 0 ? (
+                  agent.retrieved_memories.map((memory) => (
+                    <li key={memory.id} className="memory-explanation-row">
+                      <strong>{memory.timestamp}</strong>
+                      <div className="memory-explanation-body">
+                        <span>{formatText(memory.text)}</span>
+                        <div className="tag-row">
+                          {(explanationByMemoryId.get(memory.id)?.explanation_tags ?? ["explanation unavailable"]).map((tag) => (
+                            <span className="mini-tag" key={`${memory.id}-${tag}`}>
+                              {formatExplanationTag(tag)}
+                            </span>
+                          ))}
+                        </div>
+                        {explanationByMemoryId.get(memory.id) ? (
+                          <p className="score-copy">
+                            分数 {explanationByMemoryId.get(memory.id)?.total_score.toFixed(2)} · 关键词重叠{" "}
+                            {explanationByMemoryId.get(memory.id)?.keyword_overlap_count}
+                          </p>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))
+                ) : (
+                  <li>当前情境下没有检索到相关记忆。</li>
+                )}
+              </ul>
+            ) : (
+              <p>尚未选择角色。</p>
+            )}
+          </section>
+
+          <section className="details-section">
+            <div className="eyebrow">近期记忆</div>
+            {agent ? (
+              <ul className="list timeline-list">
+                {agent.recent_memories.map((memory) => (
+                  <li key={memory.id}>
+                    <strong>{memory.timestamp}</strong>
+                    <span>{formatText(memory.text)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>尚未选择角色。</p>
+            )}
+          </section>
+
+          <section className="details-section">
+            <div className="eyebrow">事件时间线</div>
+            <ul className="list timeline-list">
+              {events.map((event) => (
+                <li key={event.id} className={`event-row event-${event.event_type}`}>
+                  <strong>{event.time}</strong>
+                  <div className="timeline-body">
+                    <span className="event-type-pill">{formatEventTypeLabel(event.event_type)}</span>
+                    <span>
+                      {formatEventTitle(event.title)}: {formatEventDetail(event.detail)}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      </details>
     </aside>
   );
 }

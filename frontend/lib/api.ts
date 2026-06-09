@@ -1,7 +1,19 @@
-const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
+import { WorldState } from "@/lib/types";
+
+const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000").trim();
 
 export function apiUrl(path: string): string {
   return `${apiBase}${path}`;
+}
+
+export async function getSimulationState(): Promise<WorldState> {
+  const response = await fetch(apiUrl("/api/state"), {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  return (await response.json()) as WorldState;
 }
 
 export async function postAction(path: string): Promise<void> {

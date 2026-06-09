@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Controls } from "@/components/Controls";
 import { Sidebar } from "@/components/Sidebar";
 import { TownMap } from "@/components/TownMap";
 import {
+  getSimulationState,
   jumpToSimulationBookmark,
   loadSimulationSnapshot,
   postAction,
@@ -13,6 +14,7 @@ import {
   setSimulationSpeed,
   websocketUrl,
 } from "@/lib/api";
+import { formatEventDetail, formatEventTitle, formatEventTypeLabel, formatLocationName, formatPlanSummary } from "@/lib/presenter";
 import { WorldState } from "@/lib/types";
 
 type DemoPhase = {
@@ -24,22 +26,96 @@ type DemoPhase = {
   progressValue: number;
 };
 
+type StepGuide = {
+  label: string;
+  observe: string;
+  proof: string;
+  operatorHint: string;
+};
+
+const INITIAL_BOOKMARK_KEY = "initial";
+const bookmarkKeyByTimeLabel: Record<string, string> = {
+  "08:00": "initial",
+  "10:00": "first_spread",
+  "14:00": "second_spread",
+  "14:30": "reflection",
+};
+
+function inferActiveBookmarkKey(world: WorldState | null): string | null {
+  if (!world) {
+    return null;
+  }
+  return bookmarkKeyByTimeLabel[world.time_label] ?? null;
+}
+
+function needsFirstTimeReset(world: WorldState): boolean {
+  const knowsCount = world.agents.filter((agent) => agent.knows_party).length;
+  const hasReflection = world.agents.some((agent) => agent.reflections.length > 0);
+  return world.time_label !== "08:00" || world.tick_count !== 0 || knowsCount !== 1 || hasReflection;
+}
+
 export default function HomePage() {
   const [world, setWorld] = useState<WorldState | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState("connecting");
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [activeBookmarkKey, setActiveBookmarkKey] = useState<string | null>(null);
+  const didAutoPrepare = useRef(false);
+  const pendingBookmarkKey = useRef<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const applyWorldState = (payload: WorldState) => {
+      if (!isMounted) {
+        return;
+      }
+      setWorld(payload);
+      const inferredBookmarkKey = inferActiveBookmarkKey(payload);
+      setActiveBookmarkKey(inferredBookmarkKey);
+      setSelectedAgentId((current) => current ?? payload.agents[0]?.id ?? null);
+      if (pendingBookmarkKey.current && inferredBookmarkKey === pendingBookmarkKey.current) {
+        const matchedBookmark = payload.available_bookmarks.find((item) => item.key === pendingBookmarkKey.current);
+        setActionFeedback(`已切换到 ${matchedBookmark?.label ?? "当前阶段"}，现在可以开始讲这一步了。`);
+        pendingBookmarkKey.current = null;
+      }
+      if (!didAutoPrepare.current) {
+        didAutoPrepare.current = true;
+        if (needsFirstTimeReset(payload)) {
+          setActionFeedback("页面已自动准备到 08:00 初始态，第一次看建议从这里开始。");
+          setActiveBookmarkKey(INITIAL_BOOKMARK_KEY);
+          pendingBookmarkKey.current = INITIAL_BOOKMARK_KEY;
+          void jumpToSimulationBookmark(INITIAL_BOOKMARK_KEY).catch(() => {
+            pendingBookmarkKey.current = null;
+            setActionFeedback("自动切回 08:00 失败了，你也可以手动点击“08:00 初始态”。");
+          });
+        } else {
+          setActionFeedback("当前已经是最适合第一次观看的初始态，可以直接开始。");
+        }
+      }
+    };
+
+    void getSimulationState()
+      .then((payload) => {
+        applyWorldState(payload);
+      })
+      .catch(() => {
+        if (isMounted) {
+          setConnectionState("error");
+        }
+      });
+
     const socket = new WebSocket(websocketUrl());
     socket.onopen = () => setConnectionState("connected");
     socket.onclose = () => setConnectionState("disconnected");
     socket.onerror = () => setConnectionState("error");
     socket.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as WorldState;
-      setWorld(payload);
-      setSelectedAgentId((current) => current ?? payload.agents[0]?.id ?? null);
+      applyWorldState(JSON.parse(event.data) as WorldState);
     };
-    return () => socket.close();
+    return () => {
+      isMounted = false;
+      socket.close();
+    };
   }, []);
 
   const selectedAgent = useMemo(() => {
@@ -118,9 +194,21 @@ export default function HomePage() {
   }, [world, worldStats]);
 
   const latestEvent = world?.events[0] ?? null;
+  const connectionStateLabel = useMemo(() => {
+    if (connectionState === "connected") {
+      return "已连接";
+    }
+    if (connectionState === "error") {
+      return "连接错误";
+    }
+    if (connectionState === "disconnected") {
+      return "已断开";
+    }
+    return "连接中";
+  }, [connectionState]);
   const recommendedControlHint = useMemo(() => {
     if (!world || !demoPhase) {
-      return "先连接后端，进入演示状态。";
+      return "先等待页面拿到后端状态，然后从 08:00 开始。";
     }
     if (world.running) {
       return "当时间线出现传播或反思事件时，建议立刻暂停并讲解状态变化。";
@@ -133,6 +221,56 @@ export default function HomePage() {
     }
     return "可以短时间自动播放，一旦出现关键事件就暂停讲解。";
   }, [world, demoPhase]);
+
+  const currentStepGuide = useMemo<StepGuide | null>(() => {
+    if (!demoPhase) {
+      return null;
+    }
+    if (demoPhase.label === "初始准备") {
+      return {
+        label: "08:00 初始态",
+        observe: "先看只有 Alice 知道聚会；三个人分散在不同地点；每个人已经有自己的计划和位置。",
+        proof: "这一步证明角色一开始就有不同的内部状态和计划，而不是随机同质地到处走。",
+        operatorHint: "下一步直接点“10:00 第一次传播”，或者单步推进到 Alice 和 Bob 相遇。",
+      };
+    }
+    if (demoPhase.label === "开始传播") {
+      return {
+        label: "10:00 第一次传播",
+        observe: "重点看 Bob 是否刚获得信息、时间线是否出现传播事件、传播链是否新增 Alice -> Bob。",
+        proof: "这一步证明一次局部对话会真实改写另一个角色的记忆和知识状态，而不只是显示一段文本。",
+        operatorHint: "现在点击 Bob，去看他的最新话语、检索记忆和推理说明。",
+      };
+    }
+    if (demoPhase.label === "传播完成") {
+      return {
+        label: "14:00 第二次传播",
+        observe: "重点看 Carol 是否也知道聚会，以及传播链是否新增 Bob -> Carol。",
+        proof: "这一步证明信息会沿着社交接触继续扩散，多个局部互动会累计成全局传播。",
+        operatorHint: "再切到“14:30 反思形成态”，准备讲系统如何从多条记忆上升到高层反思。",
+      };
+    }
+    return {
+      label: "14:30 反思形成态",
+      observe: "重点看反思数量是否变成 3、三位角色是否都已知道聚会，以及右侧是否出现高层总结语句。",
+      proof: "这一步证明系统不只会存具体记忆，还会把多次互动总结成更高层的社会认知，也就是论文里的 reflection（高层反思）。",
+      operatorHint: "现在点击任意角色，重点朗读它的反思文本和推理说明。",
+    };
+  }, [demoPhase]);
+
+  const runAction = async (pendingMessage: string, action: () => Promise<void>, bookmarkKey?: string) => {
+    setActionFeedback(pendingMessage);
+    if (bookmarkKey) {
+      pendingBookmarkKey.current = bookmarkKey;
+      setActiveBookmarkKey(bookmarkKey);
+    }
+    try {
+      await action();
+    } catch {
+      pendingBookmarkKey.current = null;
+      setActionFeedback("操作没有成功，请确认前后端仍然在运行。");
+    }
+  };
 
   return (
     <main className="shell">
@@ -154,12 +292,12 @@ export default function HomePage() {
           <p className="eyebrow">Generative Agents 演示</p>
           <h1>观察一个小镇如何把个体记忆逐步演化成共享的社会行为。</h1>
           <p className="hero-copy">
-            这个课程演示版保留了论文里最关键的闭环：计划、记忆、对话、信息传播与反思。界面不是只为了“动起来”，而是为了让老师能看懂内部机制。
+            这个课程演示版保留了论文里最关键的闭环：计划、记忆、对话、信息传播与反思。第一次使用时，不需要先理解所有细节，只要按时间书签一步一步看，就能看明白整条传播链。
           </p>
           <div className="story-strip">
-            <span>10:00 Alice 告诉 Bob</span>
-            <span>14:00 Bob 再告诉 Carol</span>
-            <span>信息传播完成后触发共享反思</span>
+            <span>先看 08:00：只有 Alice 知道聚会</span>
+            <span>再看 10:00：Alice 把信息告诉 Bob</span>
+            <span>最后看 14:30：系统形成共享反思</span>
           </div>
         </div>
         <div className="hero-actions panel control-panel">
@@ -168,25 +306,36 @@ export default function HomePage() {
               <p className="eyebrow">演示控制</p>
               <h2>控制小镇时间线</h2>
             </div>
-            <span className={`status-pill ${connectionState}`}>{connectionState}</span>
+            <span className={`status-pill ${connectionState}`}>{connectionStateLabel}</span>
           </div>
           <Controls
             running={world?.running ?? false}
-            onStart={() => postAction("/api/sim/start")}
-            onPause={() => postAction("/api/sim/pause")}
-            onTick={() => postAction("/api/sim/tick")}
-            onReset={() => postAction("/api/sim/reset")}
-            onSaveSnapshot={() => saveSimulationSnapshot()}
-            onLoadSnapshot={() => loadSimulationSnapshot()}
-            onSetSpeed={(speedLabel) => setSimulationSpeed(speedLabel)}
-            onJumpToBookmark={(bookmarkKey) => jumpToSimulationBookmark(bookmarkKey)}
+            onStart={() => void runAction("开始自动演示中，出现关键事件后记得暂停。", () => postAction("/api/sim/start"))}
+            onPause={() => void runAction("已暂停，适合现在开始讲解。", () => postAction("/api/sim/pause"))}
+            onTick={() => void runAction("已请求单步推进，通常一秒内会看到状态更新。", () => postAction("/api/sim/tick"))}
+            onReset={() =>
+              void runAction("已重置到起点，建议先看 Alice 与 Bob 的第一次相遇。", () => postAction("/api/sim/reset"), INITIAL_BOOKMARK_KEY)
+            }
+            onSaveSnapshot={() => void runAction("正在保存当前快照，方便你稍后回到这个讲解节点。", () => saveSimulationSnapshot())}
+            onLoadSnapshot={() => void runAction("正在恢复快照，页面会回到你之前保存的状态。", () => loadSimulationSnapshot())}
+            onSetSpeed={(speedLabel) => void runAction(`已切换到 ${speedLabel}，如果讲解跟不上建议回到 1x 或使用单步推进。`, () => setSimulationSpeed(speedLabel))}
+            onJumpToBookmark={(bookmarkKey) =>
+              void runAction(
+                `正在切换到 ${world?.available_bookmarks.find((item) => item.key === bookmarkKey)?.label ?? "指定阶段"}。`,
+                () => jumpToSimulationBookmark(bookmarkKey),
+                bookmarkKey,
+              )
+            }
             activeSpeedLabel={world?.active_speed_label ?? "1x"}
             availableSpeedLabels={world?.available_speed_labels ?? ["0.5x", "1x", "2x"]}
             availableBookmarks={world?.available_bookmarks ?? []}
             snapshotExists={world?.snapshot_status.exists ?? false}
+            activeBookmarkKey={activeBookmarkKey}
+            actionFeedback={actionFeedback}
+            currentStepGuide={currentStepGuide}
           />
           <p className="control-note">
-            建议先用<strong>单步推进</strong>展示第一次传播，再根据讲解节奏切换速度；录屏或答辩前可以先保存快照，避免重来。
+            建议先点 <strong>08:00 初始态</strong>，再点 <strong>10:00 第一次传播</strong>。如果你只想最快讲清楚，一开始不要直接点开始演示。
           </p>
         </div>
       </section>
@@ -194,7 +343,7 @@ export default function HomePage() {
       {world && demoPhase ? (
         <section className="guide-grid" aria-label="Presentation guidance">
           <article className="guide-card phase-card">
-            <p className="summary-label">Current Phase</p>
+            <p className="summary-label">当前阶段</p>
             <div className="phase-topline">
               <strong>{demoPhase.label}</strong>
               <span className="phase-meter-label">{demoPhase.progressValue}%</span>
@@ -207,30 +356,30 @@ export default function HomePage() {
           </article>
 
           <article className="guide-card cue-card">
-            <p className="summary-label">Teacher Cue</p>
+            <p className="summary-label">现在建议怎么讲</p>
             <p className="guide-headline">{demoPhase.presenterCue}</p>
             <p className="guide-copy">{recommendedControlHint}</p>
             <div className="cue-footer">
-              <span className="cue-kicker">Next focus</span>
+              <span className="cue-kicker">下一步重点</span>
               <strong>{demoPhase.nextFocus}</strong>
             </div>
           </article>
 
           <article className="guide-card event-card">
-            <p className="summary-label">Latest Event</p>
+            <p className="summary-label">最近发生的关键事件</p>
             {latestEvent ? (
               <>
                 <div className="event-spotlight-topline">
-                  <strong>{latestEvent.title}</strong>
-                  <span className={`event-type-pill spotlight ${latestEvent.event_type}`}>{latestEvent.event_type}</span>
+                  <strong>{formatEventTitle(latestEvent.title)}</strong>
+                  <span className={`event-type-pill spotlight ${latestEvent.event_type}`}>{formatEventTypeLabel(latestEvent.event_type)}</span>
                 </div>
-                <p className="guide-copy">{latestEvent.detail}</p>
+                <p className="guide-copy">{formatEventDetail(latestEvent.detail)}</p>
                 <p className="micro-copy">
                   {latestEvent.time} · tick #{latestEvent.tick_count}
                 </p>
               </>
             ) : (
-              <p className="guide-copy">No event has been emitted yet.</p>
+              <p className="guide-copy">当前还没有新的关键事件。</p>
             )}
           </article>
         </section>
@@ -260,7 +409,7 @@ export default function HomePage() {
             <strong>{selectedAgent ? selectedAgent.name : "尚未选择角色"}</strong>
             <span>
               {selectedAgent && selectedLocation
-                ? `${selectedLocation.name} · ${selectedAgent.active_plan?.summary ?? selectedAgent.current_action}`
+                ? `${formatLocationName(selectedLocation.name)} · ${formatPlanSummary(selectedAgent.active_plan?.summary ?? selectedAgent.current_action)}`
                 : "请在地图上选择一个角色查看其认知过程"}
             </span>
           </article>
@@ -297,7 +446,7 @@ export default function HomePage() {
         </section>
       ) : (
         <section className="loading-card">
-          <p>正在等待后端仿真状态...</p>
+          <p>正在等待后端仿真状态。如果这里长时间不动，请先确认后端已经运行在 127.0.0.1:8000。</p>
         </section>
       )}
     </main>

@@ -266,6 +266,95 @@ button:focus-visible {
   gap: 12px;
 }
 
+.quick-start-guide {
+  padding: 16px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(255, 245, 236, 0.96), rgba(255, 252, 247, 0.9));
+  border: 1px solid rgba(191, 91, 53, 0.16);
+  box-shadow: var(--shadow-sm);
+}
+
+.proof-guide {
+  padding: 16px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(232, 242, 234, 0.96), rgba(255, 252, 247, 0.94));
+  border: 1px solid rgba(95, 124, 110, 0.18);
+  box-shadow: var(--shadow-sm);
+}
+
+.proof-guide-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.proof-guide-grid div {
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(40, 48, 43, 0.08);
+}
+
+.proof-guide-grid strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.proof-guide-grid p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.quick-start-header h3 {
+  margin: 8px 0 0;
+  font-size: 1.35rem;
+}
+
+.quick-start-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quick-start-list li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(40, 48, 43, 0.08);
+}
+
+.quick-start-list strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.quick-start-list p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.step-index {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--gold));
+  color: white;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
 .controls button {
   min-height: 48px;
   border: 1px solid var(--line);
@@ -348,6 +437,14 @@ button:focus-visible {
   background: rgba(237, 245, 239, 0.82);
 }
 
+.bookmark-chip.active {
+  border-style: solid;
+  border-color: rgba(191, 91, 53, 0.4);
+  background: linear-gradient(135deg, rgba(255, 236, 223, 0.96), rgba(255, 247, 239, 0.95));
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -375,6 +472,16 @@ button:focus-visible {
   margin: 0;
   color: var(--muted);
   line-height: 1.65;
+}
+
+.action-feedback {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(95, 124, 110, 0.1);
+  border: 1px solid rgba(95, 124, 110, 0.18);
+  color: #355146;
+  line-height: 1.6;
 }
 
 .guide-grid {
@@ -571,7 +678,7 @@ button:focus-visible {
 }
 
 .map-card::before {
-  content: "Field View";
+  content: "地图总览";
   position: absolute;
   top: 16px;
   right: 18px;
@@ -955,12 +1062,6 @@ button:focus-visible {
     var(--surface);
 }
 
-.reasoning-copy {
-  margin: 14px 0 0;
-  line-height: 1.7;
-  color: #453f3a;
-}
-
 .phase-callout {
   margin-top: 14px;
 }
@@ -1100,6 +1201,48 @@ button:focus-visible {
   padding: 32px;
 }
 
+.collapsible-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.collapsible-panel summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 18px;
+  font-weight: 700;
+  color: var(--surface-ink);
+}
+
+.collapsible-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-panel summary::after {
+  content: "展开";
+  float: right;
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.collapsible-panel[open] summary::after {
+  content: "收起";
+}
+
+.details-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 18px 18px;
+}
+
+.details-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 @keyframes rise-in {
   from {
     opacity: 0;
@@ -1167,6 +1310,10 @@ button:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .proof-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
   .summary-card {
     min-height: unset;
   }
@@ -1194,4 +1341,9 @@ button:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+nextjs-portal,
+[data-next-badge-root] {
+  display: none !important;
 }
