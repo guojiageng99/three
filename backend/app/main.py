@@ -14,6 +14,10 @@ app = FastAPI(title="Generative Agents Demo API")
 class SpeedRequest(BaseModel):
     speed_label: str
 
+
+class BookmarkRequest(BaseModel):
+    bookmark_key: str
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -83,6 +87,15 @@ def load_simulation_snapshot() -> dict:
         "ok": True,
         "running": False,
         "snapshot_status": snapshot_status.model_dump(),
+    }
+
+
+@app.post("/api/sim/bookmark")
+def jump_to_bookmark(payload: BookmarkRequest) -> dict:
+    bookmark = engine.jump_to_bookmark(payload.bookmark_key)
+    return {
+        "ok": True,
+        "bookmark": bookmark.model_dump(),
     }
 
 

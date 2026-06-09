@@ -36,6 +36,10 @@ export async function loadSimulationSnapshot(): Promise<void> {
   await postAction("/api/sim/snapshot/load");
 }
 
+export async function jumpToSimulationBookmark(bookmarkKey: string): Promise<void> {
+  await postJson("/api/sim/bookmark", { bookmark_key: bookmarkKey });
+}
+
 export function websocketUrl(): string {
   return apiBase.replace("http://", "ws://").replace("https://", "wss://") + "/ws/state";
 }

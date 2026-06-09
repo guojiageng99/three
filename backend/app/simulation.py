@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 from .cognition import AgentCognition
-from .models import Agent, EventLog, KnowledgeEdge, Location, MemoryEntry, PlanItem, SnapshotStatus, WorldState
+from .models import Agent, DemoBookmark, EventLog, KnowledgeEdge, Location, MemoryEntry, PlanItem, SnapshotStatus, WorldState
 
 
 class SimulationEngine:
@@ -24,6 +26,7 @@ class SimulationEngine:
         self._active_speed_label = "1x"
         self._tick_interval_seconds = self._speed_presets[self._active_speed_label]
         self._snapshot_bundle: dict | None = None
+        self._bookmarks = self._build_bookmarks()
         self._cognition = AgentCognition()
         self.reset()
 
@@ -108,6 +111,56 @@ class SimulationEngine:
             self._tick_interval_seconds = self._speed_presets[self._active_speed_label]
             return self._snapshot_status()
 
+    def jump_to_bookmark(self, bookmark_key: str) -> DemoBookmark:
+        bookmark = next((item for item in self._bookmarks if item.key == bookmark_key), None)
+        if bookmark is None:
+            raise ValueError(f"Unsupported bookmark: {bookmark_key}")
+
+        self.reset()
+        while self.current_time.strftime("%H:%M") < bookmark.target_time:
+            self.tick()
+
+        with self._lock:
+            self.running = False
+        return bookmark
+
+    def export_evidence(self) -> dict:
+        snapshot = self.snapshot()
+        reflections = {
+            agent.name: [memory.text for memory in agent.reflections]
+            for agent in snapshot.agents
+            if agent.reflections
+        }
+        return {
+            "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "day_label": snapshot.day_label,
+            "time_label": snapshot.time_label,
+            "tick_count": snapshot.tick_count,
+            "phase_label": self._phase_label(snapshot),
+            "knowledge_status": snapshot.knowledge_status,
+            "knowledge_edges": [edge.model_dump() for edge in snapshot.knowledge_edges],
+            "events": [event.model_dump() for event in snapshot.events[:8]],
+            "reflections": reflections,
+            "selected_proof_points": [
+                "Plan-driven movement is visible on the town map.",
+                "Dialogue spread is recorded in the event timeline and propagation chain.",
+                "Retrieved memories explain why an agent acts in the current context.",
+                "Reflection appears only after information becomes shared social knowledge.",
+            ],
+        }
+
+    def export_evidence_files(self, output_dir: Path) -> tuple[Path, Path]:
+        evidence = self.export_evidence()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        json_path = output_dir / "demo_evidence.json"
+        md_path = output_dir / "demo_evidence.md"
+
+        json_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+        md_path.write_text(self._build_evidence_markdown(evidence), encoding="utf-8")
+
+        return json_path, md_path
+
     def tick(self) -> None:
         with self._lock:
             self.current_time += timedelta(minutes=30)
@@ -180,6 +233,7 @@ class SimulationEngine:
                 knowledge_status=deepcopy(self.knowledge_status),
                 active_speed_label=self._active_speed_label,
                 available_speed_labels=list(self._speed_presets.keys()),
+                available_bookmarks=deepcopy(self._bookmarks),
                 snapshot_status=self._snapshot_status(),
             )
 
@@ -198,6 +252,34 @@ class SimulationEngine:
             Location(id="park", name="Johnson Park", x=42, y=10, description="A calm open park for walking and chance encounters."),
             Location(id="cafe", name="Hobbs Cafe", x=72, y=22, description="A small cafe where agents work and chat."),
             Location(id="square", name="Town Square", x=48, y=46, description="The social center of the town."),
+        ]
+
+    def _build_bookmarks(self) -> list[DemoBookmark]:
+        return [
+            DemoBookmark(
+                key="initial",
+                label="08:00 初始态",
+                target_time="08:00",
+                description="只有 Alice 知道聚会，最适合讲初始计划与人物设定。",
+            ),
+            DemoBookmark(
+                key="first_spread",
+                label="10:00 第一次传播",
+                target_time="10:00",
+                description="Alice 在咖啡馆告诉 Bob，最适合讲对话如何改变角色状态。",
+            ),
+            DemoBookmark(
+                key="second_spread",
+                label="14:00 第二次传播",
+                target_time="14:00",
+                description="Bob 在广场告诉 Carol，最适合讲局部互动如何累积成全局传播。",
+            ),
+            DemoBookmark(
+                key="reflection",
+                label="14:30 反思形成态",
+                target_time="14:30",
+                description="三人都知道信息后形成 reflection，最适合讲高层总结。",
+            ),
         ]
 
     def _build_agents(self) -> list[Agent]:
@@ -480,6 +562,62 @@ class SimulationEngine:
             label=self._snapshot_bundle["current_time"].strftime("%Y-%m-%d %H:%M"),
             tick_count=self._snapshot_bundle["tick_count"],
         )
+
+    def _phase_label(self, snapshot: WorldState) -> str:
+        if any(agent.reflections for agent in snapshot.agents):
+            return "反思形成"
+        if len(snapshot.knowledge_status) >= 3:
+            return "传播完成"
+        if len(snapshot.knowledge_status) >= 2:
+            return "开始传播"
+        return "初始准备"
+
+    def _build_evidence_markdown(self, evidence: dict) -> str:
+        knowledge_lines = "\n".join(
+            f"- `{agent_id}` 在 `{learned_at}` 获得聚会信息" for agent_id, learned_at in evidence["knowledge_status"].items()
+        )
+        edge_lines = "\n".join(
+            f"- `{edge['source_agent_id']}` -> `{edge['target_agent_id']}` at `{edge['learned_at']}`"
+            for edge in evidence["knowledge_edges"]
+        )
+        event_lines = "\n".join(
+            f"- `{event['time']}` [{event['event_type']}] {event['title']}: {event['detail']}" for event in evidence["events"]
+        )
+        reflection_lines = "\n".join(
+            f"- **{agent_name}**: {'; '.join(texts)}" for agent_name, texts in evidence["reflections"].items()
+        )
+        proof_lines = "\n".join(f"- {line}" for line in evidence["selected_proof_points"])
+
+        return f"""# Demo Evidence Export
+
+## Snapshot
+
+- 导出时间：`{evidence['exported_at']}`
+- 仿真日期：`{evidence['day_label']}`
+- 当前时间：`{evidence['time_label']}`
+- Tick：`{evidence['tick_count']}`
+- 当前阶段：`{evidence['phase_label']}`
+
+## Knowledge Status
+
+{knowledge_lines or '- 暂无传播记录'}
+
+## Propagation Chain
+
+{edge_lines or '- 暂无传播链'}
+
+## Key Events
+
+{event_lines or '- 暂无关键事件'}
+
+## Reflections
+
+{reflection_lines or '- 暂无反思生成'}
+
+## Proof Points
+
+{proof_lines}
+"""
 
 
 engine = SimulationEngine()

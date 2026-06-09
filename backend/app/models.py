@@ -83,6 +83,13 @@ class SnapshotStatus(BaseModel):
     tick_count: int | None = None
 
 
+class DemoBookmark(BaseModel):
+    key: str
+    label: str
+    target_time: str
+    description: str
+
+
 class WorldState(BaseModel):
     day_label: str
     time_label: str
@@ -97,4 +104,5 @@ class WorldState(BaseModel):
     knowledge_status: dict[str, str] = Field(default_factory=dict)
     active_speed_label: str = "1x"
     available_speed_labels: list[str] = Field(default_factory=list)
+    available_bookmarks: list[DemoBookmark] = Field(default_factory=list)
     snapshot_status: SnapshotStatus = Field(default_factory=lambda: SnapshotStatus(exists=False))

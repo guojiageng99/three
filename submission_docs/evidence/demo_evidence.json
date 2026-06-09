@@ -1,0 +1,145 @@
+{
+  "exported_at": "2026-06-09 11:10:10",
+  "day_label": "2026-06-04",
+  "time_label": "14:30",
+  "tick_count": 13,
+  "phase_label": "反思形成",
+  "knowledge_status": {
+    "alice": "08:00",
+    "bob": "10:00",
+    "carol": "14:00"
+  },
+  "knowledge_edges": [
+    {
+      "source_agent_id": "alice",
+      "target_agent_id": "bob",
+      "learned_at": "10:00",
+      "tick_count": 4
+    },
+    {
+      "source_agent_id": "bob",
+      "target_agent_id": "carol",
+      "learned_at": "14:00",
+      "tick_count": 12
+    }
+  ],
+  "events": [
+    {
+      "id": "868fcb77376340cabee542d51817b493",
+      "time": "14:00",
+      "title": "Reflection formed",
+      "detail": "The agents now treat Alice's gathering as a shared town event rather than isolated information.",
+      "event_type": "reflection",
+      "actor_ids": [
+        "alice",
+        "bob",
+        "carol"
+      ],
+      "location_id": null,
+      "tick_count": 12
+    },
+    {
+      "id": "2dc2a53550f1478e89480f58ac2c66dd",
+      "time": "14:00",
+      "title": "Party invitation shared",
+      "detail": "At Town Square around 14:00, Bob tells Carol about Alice's evening gathering.",
+      "event_type": "share",
+      "actor_ids": [
+        "bob",
+        "carol"
+      ],
+      "location_id": "square",
+      "tick_count": 12
+    },
+    {
+      "id": "97d47db27ce442fdb357b00050c3994c",
+      "time": "14:00",
+      "title": "Carol moved",
+      "detail": "Carol left Johnson Park and went to Town Square.",
+      "event_type": "move",
+      "actor_ids": [
+        "carol"
+      ],
+      "location_id": "square",
+      "tick_count": 12
+    },
+    {
+      "id": "17be4588481f42beb6b843fe595db09c",
+      "time": "14:00",
+      "title": "Bob moved",
+      "detail": "Bob left Hobbs Cafe and went to Town Square.",
+      "event_type": "move",
+      "actor_ids": [
+        "bob"
+      ],
+      "location_id": "square",
+      "tick_count": 12
+    },
+    {
+      "id": "4243e5d1546d4cbdbc12beea002fda83",
+      "time": "14:00",
+      "title": "Alice moved",
+      "detail": "Alice left Hobbs Cafe and went to Town Square.",
+      "event_type": "move",
+      "actor_ids": [
+        "alice"
+      ],
+      "location_id": "square",
+      "tick_count": 12
+    },
+    {
+      "id": "4ace2aa17f82427a8929d83554984566",
+      "time": "10:00",
+      "title": "Party invitation shared",
+      "detail": "At Hobbs Cafe around 10:00, Alice tells Bob about Alice's evening gathering.",
+      "event_type": "share",
+      "actor_ids": [
+        "alice",
+        "bob"
+      ],
+      "location_id": "cafe",
+      "tick_count": 4
+    },
+    {
+      "id": "12604210d6864bdea1627a36f619e8d4",
+      "time": "10:00",
+      "title": "Carol moved",
+      "detail": "Carol left Town Square and went to Johnson Park.",
+      "event_type": "move",
+      "actor_ids": [
+        "carol"
+      ],
+      "location_id": "park",
+      "tick_count": 4
+    },
+    {
+      "id": "fee84149ef9a43b187ca468e4bdaf8ff",
+      "time": "10:00",
+      "title": "Bob moved",
+      "detail": "Bob left Johnson Park and went to Hobbs Cafe.",
+      "event_type": "move",
+      "actor_ids": [
+        "bob"
+      ],
+      "location_id": "cafe",
+      "tick_count": 4
+    }
+  ],
+  "reflections": {
+    "Alice": [
+      "Alice's gathering is turning into a shared town event, and I should factor it into later social choices."
+    ],
+    "Bob": [
+      "Alice's gathering is turning into a shared town event, and I should factor it into later social choices."
+    ],
+    "Carol": [
+      "Alice's gathering is turning into a shared town event, and I should factor it into later social choices."
+    ]
+  },
+  "selected_proof_points": [
+    "Plan-driven movement is visible on the town map.",
+    "Dialogue spread is recorded in the event timeline and propagation chain.",
+    "Retrieved memories explain why an agent acts in the current context.",
+    "Reflection appears only after information becomes shared social knowledge."
+  ]
+}

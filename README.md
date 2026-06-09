@@ -178,6 +178,237 @@ For explanation during review or presentation:
 4. Highlight when all three agents become aware of the gathering
 5. Show the reflection output once enough social context has accumulated
 
+## Detailed Demo Walkthrough
+
+This section is the recommended classroom-demo script.  
+It answers three questions for each step:
+
+1. what to click
+2. what you should see
+3. which paper mechanism that behavior demonstrates
+
+### Key Terms First
+
+- `gathering`: Alice's evening social gathering
+- `reflection`: a higher-level conclusion formed from several lower-level events or memories
+
+Example:
+
+- low-level memory: `Alice told Bob about the gathering`
+- low-level memory: `Bob told Carol about the gathering`
+- reflection: `The gathering is no longer private information. It has become shared town knowledge.`
+
+### Before You Start
+
+The best way to understand the demo is **not** to begin from a late state such as `20:00`.
+Always begin from the initial state or from the prepared bookmarks.
+
+Recommended options:
+
+- click `08:00 初始态`
+- or click `Reset`
+
+### Step 1: Show the initial state at 08:00
+
+**Click**
+
+- `08:00 初始态`
+- or `Reset`
+
+**What you should see**
+
+- time becomes `08:00`
+- Alice is at `Alice's Home`
+- Bob is at `Johnson Park`
+- Carol is at `Town Square`
+- only Alice knows about the gathering
+
+**What to point at**
+
+- click `Alice`
+- show `Current Plan`
+- click `Bob`
+- show `Current Plan`
+- click `Carol`
+- show `Current Plan`
+
+**What this demonstrates from the paper**
+
+- each agent has its own plan
+- agents do not move randomly
+- the world starts with asymmetric knowledge: only one agent knows the event
+
+This corresponds to the paper's mechanisms of:
+
+- planning
+- persistent internal state
+- initial memory difference between agents
+
+### Step 2: Advance to 10:00 and show the first information spread
+
+**Click**
+
+- `10:00 第一次传播`
+
+If you want to demonstrate it manually instead:
+
+- click `Single Tick` 4 times from `08:00`
+
+**What you should see**
+
+- time becomes `10:00`
+- Alice and Bob are both at `Hobbs Cafe`
+- event timeline shows a `share` event around `10:00`
+- Bob now knows the gathering
+- propagation chain shows `alice -> bob`
+
+**What to point at**
+
+1. on the map, show that Alice and Bob meet at the same location
+2. in the event timeline, show the invitation-sharing event
+3. click `Bob`
+4. in the right panel, show:
+   - `Knows gathering`
+   - `Latest utterance`
+   - `Retrieved memories`
+   - `Recent memories`
+
+**What this demonstrates from the paper**
+
+- agents move according to plan and therefore meet naturally in the environment
+- social interaction changes another agent's internal state
+- a dialogue is not just text output; it creates new memory and new knowledge
+
+This corresponds to the paper's mechanisms of:
+
+- plan-driven movement
+- social interaction
+- memory update
+- information propagation
+
+### Step 3: Explain memory retrieval at the first spread state
+
+**Click**
+
+- stay at `10:00`
+- click `Bob`
+
+**What you should see**
+
+- `Retrieved memories` contains items related to the gathering or the recent conversation
+- the score explanation tags show why these memories were selected
+
+**What to point at**
+
+- show that the retrieved memories are not random
+- show the score tags or retrieval explanation row
+- then show `Reasoning Context`
+
+**What this demonstrates from the paper**
+
+- the agent does not use its entire memory bank at once
+- it retrieves the most relevant memories for the current context
+- current action depends on recalled memory, not only on the schedule
+
+This corresponds to the paper's mechanisms of:
+
+- memory stream
+- retrieval
+- context-conditioned action generation
+
+### Step 4: Advance to 14:00 and show the second information spread
+
+**Click**
+
+- `14:00 第二次传播`
+
+If you want to demonstrate it manually instead:
+
+- continue ticking from `10:00` until `14:00`
+
+**What you should see**
+
+- time becomes `14:00`
+- Alice, Bob, and Carol gather in `Town Square`
+- the event timeline shows that Bob tells Carol about the gathering
+- propagation chain becomes:
+  - `alice -> bob`
+  - `bob -> carol`
+- Carol now knows the gathering
+
+**What to point at**
+
+1. on the map, show the three agents meeting in the square
+2. in the propagation panel, show that Bob is now a secondary source of information
+3. click `Carol`
+4. show that Carol's memories and current reasoning have changed
+
+**What this demonstrates from the paper**
+
+- information spreads across multiple agents, not just from one source
+- the system is simulating a social process rather than a single scripted answer
+- local interactions accumulate into a larger world state change
+
+This corresponds to the paper's mechanisms of:
+
+- multi-agent social behavior
+- chained propagation
+- environment-mediated encounters
+
+### Step 5: Advance to the reflection state and show high-level cognition
+
+**Click**
+
+- `14:30 反思形成态`
+
+**What you should see**
+
+- the phase becomes `反思形成`
+- the event timeline contains `Reflection formed`
+- each informed agent has a reflection entry
+- current actions mention shared town knowledge or reflection
+
+**What to point at**
+
+1. in the timeline, show the reflection event
+2. click Alice, Bob, or Carol
+3. open the `Reflections` panel
+4. read one reflection aloud
+
+**What this demonstrates from the paper**
+
+- the system does not stop at individual memories
+- it summarizes multiple lower-level events into a higher-level conclusion
+- that higher-level conclusion can influence later behavior
+
+This corresponds to the paper's mechanisms of:
+
+- reflection
+- higher-level memory abstraction
+- long-range behavioral coherence
+
+### Step 6: Explain why this is a paper reproduction rather than only a UI demo
+
+Use this sentence during presentation:
+
+> This demo reproduces the paper's minimum complete mechanism: agents follow plans, meet in the environment, retrieve relevant memories, exchange information through dialogue, update internal state, and finally form higher-level reflection.
+
+### Shortest Possible Presentation Flow
+
+If time is very limited, use this exact sequence:
+
+1. `08:00 初始态`
+2. explain that only Alice knows the gathering
+3. `10:00 第一次传播`
+4. show `alice -> bob`
+5. show Bob's retrieved memories and reasoning
+6. `14:00 第二次传播`
+7. show `bob -> carol`
+8. `14:30 反思形成态`
+9. show the reflection panel
+
+This is the shortest reliable path for a 10-minute course video.
+
 ## API Reference
 
 Backend base URL:
@@ -274,6 +505,36 @@ Prepared course materials are under `submission_docs/`:
 - per-slide script
 - 10-minute video script
 - screenshots for the reports and slides
+
+## Demo Operations
+
+The frontend now supports presentation-oriented controls:
+
+- `Single Tick`: advance the simulation by 30 minutes for step-by-step explanation
+- `Save Snapshot` / `Load Snapshot`: save and restore a known demo state
+- speed chips: switch between `0.5x`, `1x`, and `2x`
+- scenario bookmarks:
+  - `08:00 初始态`
+  - `10:00 第一次传播`
+  - `14:00 第二次传播`
+  - `14:30 反思形成态`
+
+These bookmarks are recommended for recording because they jump directly to the main proof points of the demo.
+
+## Evidence Export
+
+To generate structured report material from the current deterministic demo state:
+
+```bash
+python scripts/export_demo_evidence.py
+```
+
+This writes:
+
+- `submission_docs/evidence/demo_evidence.json`
+- `submission_docs/evidence/demo_evidence.md`
+
+The Markdown file is intended to be reused directly in reports, PPT notes, or appendix material.
 
 ## Short Explanation For Teammates
 

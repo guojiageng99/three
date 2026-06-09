@@ -1,5 +1,7 @@
 "use client";
 
+import { DemoBookmark } from "@/lib/types";
+
 type ControlsProps = {
   onStart: () => void;
   onPause: () => void;
@@ -8,9 +10,11 @@ type ControlsProps = {
   onSaveSnapshot: () => void;
   onLoadSnapshot: () => void;
   onSetSpeed: (speedLabel: string) => void;
+  onJumpToBookmark: (bookmarkKey: string) => void;
   running: boolean;
   activeSpeedLabel: string;
   availableSpeedLabels: string[];
+  availableBookmarks: DemoBookmark[];
   snapshotExists: boolean;
 };
 
@@ -22,9 +26,11 @@ export function Controls({
   onSaveSnapshot,
   onLoadSnapshot,
   onSetSpeed,
+  onJumpToBookmark,
   running,
   activeSpeedLabel,
   availableSpeedLabels,
+  availableBookmarks,
   snapshotExists,
 }: ControlsProps) {
   return (
@@ -55,6 +61,19 @@ export function Controls({
             onClick={() => onSetSpeed(speedLabel)}
           >
             {speedLabel}
+          </button>
+        ))}
+      </div>
+      <div className="bookmark-group" aria-label="Demo bookmark controls">
+        {availableBookmarks.map((bookmark) => (
+          <button
+            key={bookmark.key}
+            type="button"
+            className="bookmark-chip"
+            onClick={() => onJumpToBookmark(bookmark.key)}
+            title={bookmark.description}
+          >
+            {bookmark.label}
           </button>
         ))}
       </div>

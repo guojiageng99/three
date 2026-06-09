@@ -5,7 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Controls } from "@/components/Controls";
 import { Sidebar } from "@/components/Sidebar";
 import { TownMap } from "@/components/TownMap";
-import { loadSimulationSnapshot, postAction, saveSimulationSnapshot, setSimulationSpeed, websocketUrl } from "@/lib/api";
+import {
+  jumpToSimulationBookmark,
+  loadSimulationSnapshot,
+  postAction,
+  saveSimulationSnapshot,
+  setSimulationSpeed,
+  websocketUrl,
+} from "@/lib/api";
 import { WorldState } from "@/lib/types";
 
 type DemoPhase = {
@@ -172,8 +179,10 @@ export default function HomePage() {
             onSaveSnapshot={() => saveSimulationSnapshot()}
             onLoadSnapshot={() => loadSimulationSnapshot()}
             onSetSpeed={(speedLabel) => setSimulationSpeed(speedLabel)}
+            onJumpToBookmark={(bookmarkKey) => jumpToSimulationBookmark(bookmarkKey)}
             activeSpeedLabel={world?.active_speed_label ?? "1x"}
             availableSpeedLabels={world?.available_speed_labels ?? ["0.5x", "1x", "2x"]}
+            availableBookmarks={world?.available_bookmarks ?? []}
             snapshotExists={world?.snapshot_status.exists ?? false}
           />
           <p className="control-note">

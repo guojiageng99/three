@@ -306,6 +306,12 @@ button:focus-visible {
   gap: 8px;
 }
 
+.bookmark-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .speed-chip {
   min-height: 38px;
   padding: 8px 12px;
@@ -320,6 +326,26 @@ button:focus-visible {
   border-color: rgba(191, 91, 53, 0.28);
   color: var(--accent-deep);
   font-weight: 700;
+}
+
+.bookmark-chip {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px dashed rgba(95, 124, 110, 0.34);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-sm);
+  color: #355146;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.bookmark-chip:hover {
+  transform: translateY(-1px);
+  border-color: rgba(95, 124, 110, 0.5);
+  background: rgba(237, 245, 239, 0.82);
 }
 
 .status-pill {

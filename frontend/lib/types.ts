@@ -77,6 +77,13 @@ export type SnapshotStatus = {
   tick_count: number | null;
 };
 
+export type DemoBookmark = {
+  key: string;
+  label: string;
+  target_time: string;
+  description: string;
+};
+
 export type WorldState = {
   day_label: string;
   time_label: string;
@@ -91,5 +98,6 @@ export type WorldState = {
   knowledge_status: Record<string, string>;
   active_speed_label: string;
   available_speed_labels: string[];
+  available_bookmarks: DemoBookmark[];
   snapshot_status: SnapshotStatus;
 };
