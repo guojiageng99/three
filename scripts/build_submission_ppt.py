@@ -25,7 +25,7 @@ SLIDES = [
     {
         "type": "title",
         "title": "Generative Agents 论文复刻",
-        "subtitle": "基于 Smallville 风格场景的最小完整机制演示系统\n《大模型原理与应用》课程作业\n组员：待填写",
+        "subtitle": "基于 Smallville 风格场景的最小完整机制演示系统\n《大模型原理与应用》课程作业",
     },
     {
         "type": "content",

@@ -175,7 +175,7 @@ def write_submission_notes(target_dir: Path) -> None:
 
 1. 本目录已整理为课程提交包结构。
 2. `video/` 目录下暂放讲解脚本，请录制完成后替换为最终 mp4。
-3. `ppt/Generative_Agents_课程答辩稿.pptx` 仍建议手动补上首页组员姓名。
+3. `ppt/Generative_Agents_课程答辩稿.pptx` 已清理默认占位文本；如课程要求署名，请手动补上首页组员姓名。
 4. 代码目录未包含 `.venv`、`node_modules`、`.next` 等本地依赖缓存。
 5. 后端支持 OpenAI 兼容接口，也支持无 key 的稳定 fallback 演示。
 """
