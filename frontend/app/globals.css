@@ -288,6 +288,34 @@ button:focus-visible {
   margin-top: 14px;
 }
 
+.proof-focus {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 244, 232, 0.92), rgba(255, 251, 245, 0.98));
+  border: 1px solid rgba(191, 91, 53, 0.16);
+  box-shadow: var(--shadow-sm);
+}
+
+.proof-focus-label {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.proof-focus strong {
+  display: block;
+  color: var(--accent-deep);
+  font-size: 1.1rem;
+}
+
+.proof-focus p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .proof-guide-grid div {
   padding: 12px;
   border-radius: 16px;

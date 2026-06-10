@@ -28,6 +28,8 @@ type DemoPhase = {
 
 type StepGuide = {
   label: string;
+  focusAgent: string;
+  focusReason: string;
   observe: string;
   proof: string;
   operatorHint: string;
@@ -262,6 +264,8 @@ export default function HomePage() {
     if (demoPhase.label === "初始准备") {
       return {
         label: "08:00 初始态",
+        focusAgent: "Alice",
+        focusReason: "因为现在只有她知道聚会，起点状态最清楚。",
         observe: "先看只有 Alice 知道聚会；三个人分散在不同地点；每个人已经有自己的计划和位置。",
         proof: "这一步证明角色一开始就有不同的内部状态和计划，而不是随机同质地到处走。",
         operatorHint: "下一步直接点“10:00 第一次传播”，或者单步推进到 Alice 和 Bob 相遇。",
@@ -270,6 +274,8 @@ export default function HomePage() {
     if (demoPhase.label === "开始传播") {
       return {
         label: "10:00 第一次传播",
+        focusAgent: "Bob",
+        focusReason: "因为他刚从 Alice 那里获得新信息，状态变化最明显。",
         observe: "重点看 Bob 是否刚获得信息、时间线是否出现传播事件、传播链是否新增 Alice -> Bob。",
         proof: "这一步证明一次局部对话会真实改写另一个角色的记忆和知识状态，而不只是显示一段文本。",
         operatorHint: "现在点击 Bob，去看他的最新话语、检索记忆和推理说明。",
@@ -278,6 +284,8 @@ export default function HomePage() {
     if (demoPhase.label === "传播完成") {
       return {
         label: "14:00 第二次传播",
+        focusAgent: "Carol",
+        focusReason: "因为她是第二次传播的新接收者，最适合讲信息扩散。",
         observe: "重点看 Carol 是否也知道聚会，以及传播链是否新增 Bob -> Carol。",
         proof: "这一步证明信息会沿着社交接触继续扩散，多个局部互动会累计成全局传播。",
         operatorHint: "再切到“14:30 反思形成态”，准备讲系统如何从多条记忆上升到高层反思。",
@@ -285,6 +293,8 @@ export default function HomePage() {
     }
     return {
       label: "14:30 反思形成态",
+      focusAgent: "Alice",
+      focusReason: "因为她最早知道聚会，最容易讲清楚“私人信息如何变成共享认知”。",
       observe: "重点看反思数量是否变成 3、三位角色是否都已知道聚会，以及右侧是否出现高层总结语句。",
       proof: "这一步证明系统不只会存具体记忆，还会把多次互动总结成更高层的社会认知，也就是论文里的 reflection（高层反思）。",
       operatorHint: "现在点击任意角色，重点朗读它的反思文本和推理说明。",

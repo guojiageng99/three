@@ -20,6 +20,8 @@ type ControlsProps = {
   actionFeedback: string | null;
   currentStepGuide: {
     label: string;
+    focusAgent: string;
+    focusReason: string;
     observe: string;
     proof: string;
     operatorHint: string;
@@ -77,14 +79,19 @@ export function Controls({
       </div>
       {currentStepGuide ? (
         <div className="proof-guide">
-          <div className="quick-start-header">
-            <p className="eyebrow">当前书签说明</p>
-            <h3>{currentStepGuide.label}</h3>
-          </div>
-          <div className="proof-guide-grid">
-            <div>
-              <strong>现在先看什么</strong>
-              <p>{currentStepGuide.observe}</p>
+        <div className="quick-start-header">
+          <p className="eyebrow">当前书签说明</p>
+          <h3>{currentStepGuide.label}</h3>
+        </div>
+        <div className="proof-focus">
+          <span className="proof-focus-label">界面当前会优先看</span>
+          <strong>{currentStepGuide.focusAgent}</strong>
+          <p>{currentStepGuide.focusReason}</p>
+        </div>
+        <div className="proof-guide-grid">
+          <div>
+            <strong>现在先看什么</strong>
+            <p>{currentStepGuide.observe}</p>
             </div>
             <div>
               <strong>这一步说明什么</strong>
