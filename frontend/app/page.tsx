@@ -41,6 +41,13 @@ const bookmarkKeyByTimeLabel: Record<string, string> = {
   "14:30": "reflection",
 };
 
+const recommendedAgentByBookmark: Record<string, string> = {
+  initial: "alice",
+  first_spread: "bob",
+  second_spread: "carol",
+  reflection: "alice",
+};
+
 function inferActiveBookmarkKey(world: WorldState | null): string | null {
   if (!world) {
     return null;
@@ -52,6 +59,26 @@ function needsFirstTimeReset(world: WorldState): boolean {
   const knowsCount = world.agents.filter((agent) => agent.knows_party).length;
   const hasReflection = world.agents.some((agent) => agent.reflections.length > 0);
   return world.time_label !== "08:00" || world.tick_count !== 0 || knowsCount !== 1 || hasReflection;
+}
+
+function recommendedAgentIdForWorld(world: WorldState, bookmarkKey: string | null): string | null {
+  if (bookmarkKey) {
+    return recommendedAgentByBookmark[bookmarkKey] ?? null;
+  }
+  if (world.agents.some((agent) => agent.reflections.length > 0)) {
+    return "alice";
+  }
+  if (world.knowledge_status.carol) {
+    return "carol";
+  }
+  if (world.knowledge_status.bob) {
+    return "bob";
+  }
+  return "alice";
+}
+
+function recommendedAgentIdForBookmark(bookmarkKey: string): string | null {
+  return recommendedAgentByBookmark[bookmarkKey] ?? null;
 }
 
 export default function HomePage() {
@@ -73,7 +100,13 @@ export default function HomePage() {
       setWorld(payload);
       const inferredBookmarkKey = inferActiveBookmarkKey(payload);
       setActiveBookmarkKey(inferredBookmarkKey);
-      setSelectedAgentId((current) => current ?? payload.agents[0]?.id ?? null);
+      setSelectedAgentId((current) => {
+        const pendingBookmark = pendingBookmarkKey.current;
+        if (pendingBookmark) {
+          return recommendedAgentIdForWorld(payload, pendingBookmark) ?? current ?? payload.agents[0]?.id ?? null;
+        }
+        return current ?? recommendedAgentIdForWorld(payload, inferredBookmarkKey) ?? payload.agents[0]?.id ?? null;
+      });
       if (pendingBookmarkKey.current && inferredBookmarkKey === pendingBookmarkKey.current) {
         const matchedBookmark = payload.available_bookmarks.find((item) => item.key === pendingBookmarkKey.current);
         setActionFeedback(`已切换到 ${matchedBookmark?.label ?? "当前阶段"}，现在可以开始讲这一步了。`);
@@ -263,6 +296,7 @@ export default function HomePage() {
     if (bookmarkKey) {
       pendingBookmarkKey.current = bookmarkKey;
       setActiveBookmarkKey(bookmarkKey);
+      setSelectedAgentId(recommendedAgentIdForBookmark(bookmarkKey));
     }
     try {
       await action();

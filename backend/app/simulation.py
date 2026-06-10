@@ -374,7 +374,7 @@ class SimulationEngine:
                     preferred_speaker = next((agent for agent in knowers if agent.id != "alice"), knowers[0])
                     self._handle_pair_interaction(preferred_speaker, listener, self._location(location_id), time_label)
 
-        if self._party_knowers_count() >= 3 and not self.story_flags["party_reflection_written"]:
+        if time_label >= "14:30" and self._party_knowers_count() >= 3 and not self.story_flags["party_reflection_written"]:
             self.story_flags["party_reflection_written"] = True
             reflection_actors: list[str] = []
             for agent in self.agents:
