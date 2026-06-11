@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import re
-import shutil
-import zipfile
 from pathlib import Path
-from xml.etree import ElementTree as ET
 
 from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
+from pptx.enum.text import PP_ALIGN
+from pptx.oxml.xmlchemy import OxmlElement
+from pptx.util import Inches, Pt
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,267 +15,249 @@ SUBMISSION_DIR = ROOT / "submission_docs"
 SOURCE_PPT = SUBMISSION_DIR / "generative agents.pptx"
 OUTPUT_PPT = SUBMISSION_DIR / "generative agents_最终版.pptx"
 
-P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
-A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
-R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
-CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
+RED = RGBColor(192, 0, 0)
+LINE_RED = RGBColor(235, 76, 96)
+BLUE = RGBColor(28, 68, 145)
+BLACK = RGBColor(32, 32, 32)
+WHITE = RGBColor(255, 255, 255)
+LIGHT = RGBColor(248, 248, 248)
 
-ET.register_namespace("p", P_NS)
-ET.register_namespace("a", A_NS)
-ET.register_namespace("r", R_NS)
+FONT = "Microsoft YaHei"
+TITLE_FONT = "SimHei"
 
-SLIDE_PAYLOADS = [
+
+SLIDES = [
     {
-        "title": "复现机制总览",
-        "subtitle": "论文复现补充",
-        "section": "核心闭环",
+        "title": "论文复现补充",
+        "section": "核心认知闭环",
         "cards": [
-            "观察\n读取环境与相遇",
-            "记忆\n写入经历",
-            "检索\n召回相关记忆",
-            "反思\n形成高层认知",
+            ("观察", "读取环境与相遇"),
+            ("记忆", "写入经历"),
+            ("检索", "召回相关记忆"),
+            ("反思", "形成高层认知"),
         ],
-        "detail": "环境感知 -> 记忆检索 -> 计划驱动 -> 行动/对话 -> 记忆更新 -> 反思形成\n本项目保留论文中最核心的认知闭环，角色行为由计划、位置、记忆和相遇共同驱动。",
+        "box_title": "复现机制总览",
+        "box_lines": [
+            "环境感知 -> 记忆检索 -> 计划驱动 -> 行动/对话",
+            "记忆更新 -> 反思形成",
+            "本项目保留论文中最核心的生成式智能体闭环。",
+        ],
     },
     {
         "title": "双模式设计",
-        "subtitle": "论文复现补充",
-        "section": "运行模式",
+        "section": "规则演示与 LLM 增强",
         "cards": [
-            "deterministic\n稳定演示",
-            "llm\n模型生成",
-            "fallback\n失败回退",
-            "evidence\n状态可解释",
+            ("规则模式", "稳定演示"),
+            ("LLM 模式", "模型生成"),
+            ("失败回退", "接口异常"),
+            ("证据记录", "状态可解释"),
         ],
-        "detail": "deterministic 模式适合录屏和答辩；llm 模式让模型参与计划、行动、对话和 reflection 生成。\n接口失败时自动规则回退，右侧面板显示模式、LLM 状态、记忆流数量和反思触发依据。",
+        "box_title": "为什么这样设计",
+        "box_lines": [
+            "规则模式：适合录屏和答辩，传播链稳定可复现。",
+            "LLM 模式：让模型参与计划、行动、对话和反思生成。",
+            "接口失败时自动回退，避免现场 demo 中断。",
+        ],
     },
     {
-        "title": "LLM 模式演示路线",
-        "subtitle": "论文复现补充",
-        "section": "时间线",
+        "title": "LLM 演示路线",
+        "section": "按时间书签讲清楚",
         "cards": [
-            "08:00\n初始态",
-            "10:00\nAlice -> Bob",
-            "14:00\nBob -> Carol",
-            "14:30\nReflection",
+            ("08:00", "初始态"),
+            ("10:00", "Alice -> Bob"),
+            ("14:00", "Bob -> Carol"),
+            ("14:30", "反思生成"),
         ],
-        "detail": "08:00 展示 persona、初始记忆和计划；10:00 展示对话如何改写 Bob 内部状态；14:00 展示局部互动形成传播链；14:30 展示记忆重要性超过阈值后的高层反思。",
+        "box_title": "讲解顺序",
+        "box_lines": [
+            "08:00：展示 persona、初始记忆和计划。",
+            "10:00：展示对话如何改写 Bob 的内部状态。",
+            "14:00：展示局部互动如何形成传播链。",
+            "14:30：展示记忆重要性超过阈值后的高层反思。",
+        ],
     },
     {
-        "title": "对应论文机制",
-        "subtitle": "论文复现补充",
-        "section": "机制映射",
+        "title": "机制对应关系",
+        "section": "代码现象对应论文模块",
         "cards": [
-            "Memory Stream\n统一记忆流",
-            "Retrieval\n检索函数",
-            "Planning\n计划行动",
-            "Reflection\n抽象总结",
+            ("记忆流", "Memory Stream"),
+            ("检索", "Retrieval"),
+            ("计划", "Planning"),
+            ("反思", "Reflection"),
         ],
-        "detail": "观察、行动、对话和反思都写入 memory stream；检索按重要性、近因、地点、社交关系和相关性打分；计划提供日程骨架，检索记忆影响当前行动。",
+        "box_title": "论文机制映射",
+        "box_lines": [
+            "观察、行动、对话和反思都写入统一记忆流。",
+            "检索按重要性、近因、地点、社交关系和相关性打分。",
+            "计划提供日程骨架，检索记忆影响当前行动。",
+        ],
     },
     {
         "title": "局限与改进",
-        "subtitle": "论文复现补充",
-        "section": "后续方向",
+        "section": "课程复现与原论文差距",
         "cards": [
-            "规模\n3 个角色",
-            "世界\n4 个地点",
-            "检索\n待接 embedding",
-            "计划\n待扩展多日",
+            ("规模", "3 个角色"),
+            ("世界", "4 个地点"),
+            ("检索", "待接 embedding"),
+            ("计划", "待扩展多日"),
         ],
-        "detail": "当前是课程作业级复现，不是 Stanford Smallville 全量工程。\n后续可以扩展 25 个 agent、embedding retrieval、多日长期计划、更丰富社交关系和开放式事件解析。",
+        "box_title": "后续方向",
+        "box_lines": [
+            "当前是课程作业级复现，不是 Stanford Smallville 全量工程。",
+            "后续可扩展 25 个 agent 与多日长期计划。",
+            "检索可进一步接入 embedding retrieval。",
+            "也可以加入更丰富的社交关系和开放式事件解析。",
+        ],
     },
 ]
 
 
-def qname(ns: str, tag: str) -> str:
-    return f"{{{ns}}}{tag}"
+def add_textbox(slide, left, top, width, height, text, size=22, color=BLACK, bold=False, align=None):
+    shape = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+    clear_shape_effects(shape)
+    tf = shape.text_frame
+    tf.clear()
+    tf.margin_left = Inches(0)
+    tf.margin_right = Inches(0)
+    tf.margin_top = Inches(0)
+    tf.margin_bottom = Inches(0)
+    p = tf.paragraphs[0]
+    if align is not None:
+        p.alignment = align
+    run = p.add_run()
+    run.text = text
+    run.font.name = FONT
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.color.rgb = color
+    return shape
 
 
-def slide_number(name: str) -> int:
-    match = re.search(r"slides/slide(\d+)\.xml$", name)
-    return int(match.group(1)) if match else -1
+def clear_shape_effects(shape) -> None:
+    sp_pr = getattr(shape._element, "spPr", None)
+    if sp_pr is None:
+        return
+    for child in list(sp_pr):
+        if child.tag.endswith("}effectLst") or child.tag.endswith("}effectDag"):
+            sp_pr.remove(child)
+    sp_pr.append(OxmlElement("a:effectLst"))
 
 
-def next_rel_id(root: ET.Element) -> str:
-    max_id = 0
-    for rel in root:
-        rid = rel.attrib.get("Id", "")
-        if rid.startswith("rId") and rid[3:].isdigit():
-            max_id = max(max_id, int(rid[3:]))
-    return f"rId{max_id + 1}"
+def add_title(slide, title: str):
+    shape = add_textbox(slide, 0.62, 0.22, 7.2, 0.72, title, size=34, color=RED, bold=True)
+    for run in shape.text_frame.paragraphs[0].runs:
+        run.font.name = TITLE_FONT
+    line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.15), Inches(1.08), Inches(13.0), Inches(0.04))
+    clear_shape_effects(line)
+    line.fill.solid()
+    line.fill.fore_color.rgb = LINE_RED
+    line.line.color.rgb = LINE_RED
 
 
-def max_slide_id(presentation: ET.Element) -> int:
-    values = []
-    for item in presentation.findall(f".//{{{P_NS}}}sldId"):
-        value = item.attrib.get("id")
-        if value and value.isdigit():
-            values.append(int(value))
-    return max(values or [255])
+def add_section(slide, text: str, top: float):
+    square = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(top + 0.08), Inches(0.16), Inches(0.16))
+    clear_shape_effects(square)
+    square.fill.solid()
+    square.fill.fore_color.rgb = BLUE
+    square.line.color.rgb = BLUE
+    add_textbox(slide, 0.82, top - 0.02, 5.7, 0.48, text, size=24, color=RED, bold=True)
 
 
-def replace_slide_text(slide_xml: bytes, lines: list[str]) -> bytes:
-    root = ET.fromstring(slide_xml)
-    text_nodes = root.findall(f".//{{{A_NS}}}t")
-    if not text_nodes:
-        return slide_xml
-
-    for index, node in enumerate(text_nodes):
-        node.text = lines[index] if index < len(lines) else ""
-
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
-
-
-def placeholder_lines(payload: dict[str, object]) -> list[str]:
-    cards = payload["cards"]
-    assert isinstance(cards, list)
-    return [
-        str(payload["title"]),
-        str(payload["subtitle"]),
-        str(payload["section"]),
-        *[str(item) for item in cards],
-        str(payload["detail"]),
-    ]
-
-
-def add_content_type(content_types_xml: bytes, slide_path: str) -> bytes:
-    root = ET.fromstring(content_types_xml)
-    part_name = f"/{slide_path}"
-    exists = any(item.attrib.get("PartName") == part_name for item in root)
-    if not exists:
-        ET.SubElement(
-            root,
-            qname(CT_NS, "Override"),
-            {
-                "PartName": part_name,
-                "ContentType": "application/vnd.openxmlformats-officedocument.presentationml.slide+xml",
-            },
-        )
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+def add_card(slide, left: float, top: float, width: float, title: str, desc: str):
+    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(1.05))
+    clear_shape_effects(card)
+    card.fill.solid()
+    card.fill.fore_color.rgb = LIGHT
+    card.line.color.rgb = RED
+    card.line.width = Pt(1.4)
+    tf = card.text_frame
+    tf.clear()
+    tf.margin_left = Inches(0.13)
+    tf.margin_right = Inches(0.13)
+    tf.margin_top = Inches(0.12)
+    p1 = tf.paragraphs[0]
+    p1.alignment = PP_ALIGN.CENTER
+    r1 = p1.add_run()
+    r1.text = title
+    r1.font.name = FONT
+    r1.font.size = Pt(17)
+    r1.font.bold = True
+    r1.font.color.rgb = BLACK
+    p2 = tf.add_paragraph()
+    p2.alignment = PP_ALIGN.CENTER
+    r2 = p2.add_run()
+    r2.text = desc
+    r2.font.name = FONT
+    r2.font.size = Pt(15)
+    r2.font.color.rgb = BLACK
 
 
-def extend_presentation_xml(presentation_xml: bytes, new_slides: list[tuple[int, str]]) -> bytes:
-    root = ET.fromstring(presentation_xml)
-    slide_id_list = root.find(f"{{{P_NS}}}sldIdLst")
-    if slide_id_list is None:
-        raise ValueError("presentation.xml does not contain p:sldIdLst")
-
-    current_max_id = max_slide_id(root)
-    for index, (_slide_no, rid) in enumerate(new_slides, start=1):
-        ET.SubElement(
-            slide_id_list,
-            qname(P_NS, "sldId"),
-            {"id": str(current_max_id + index), qname(R_NS, "id"): rid},
-        )
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+def add_connector(slide, x1: float, y: float, x2: float):
+    line = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x1), Inches(y), Inches(x2), Inches(y))
+    clear_shape_effects(line)
+    line.line.color.rgb = RED
+    line.line.width = Pt(1.4)
 
 
-def extend_presentation_rels(rels_xml: bytes, new_slides: list[tuple[int, str]]) -> bytes:
-    root = ET.fromstring(rels_xml)
-    for slide_no, rid in new_slides:
-        ET.SubElement(
-            root,
-            qname(REL_NS, "Relationship"),
-            {
-                "Id": rid,
-                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
-                "Target": f"slides/slide{slide_no}.xml",
-            },
-        )
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+def add_black_box(slide, title: str, lines: list[str]):
+    box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(7.35), Inches(4.18), Inches(5.35), Inches(1.72))
+    clear_shape_effects(box)
+    box.fill.solid()
+    box.fill.fore_color.rgb = BLACK
+    box.line.color.rgb = BLACK
+    tf = box.text_frame
+    tf.clear()
+    tf.margin_left = Inches(0.22)
+    tf.margin_right = Inches(0.22)
+    tf.margin_top = Inches(0.16)
+    p = tf.paragraphs[0]
+    r = p.add_run()
+    r.text = title
+    r.font.name = FONT
+    r.font.size = Pt(15)
+    r.font.bold = True
+    r.font.color.rgb = WHITE
+    for line in lines:
+        p = tf.add_paragraph()
+        r = p.add_run()
+        r.text = line
+        r.font.name = FONT
+        r.font.size = Pt(12)
+        r.font.color.rgb = WHITE
+
+
+def add_note_block(slide, lines: list[str]):
+    add_section(slide, "说明", 3.62)
+    for index, line in enumerate(lines):
+        add_textbox(slide, 0.82, 4.18 + index * 0.35, 5.9, 0.3, line, size=15, color=BLACK)
+
+
+def add_slide(prs: Presentation, payload: dict) -> None:
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_title(slide, payload["title"])
+    add_section(slide, payload["section"], 1.48)
+
+    lefts = [0.75, 4.0, 7.85, 11.0]
+    widths = [1.75, 2.1, 2.15, 1.82]
+    for i, ((title, desc), left, width) in enumerate(zip(payload["cards"], lefts, widths)):
+        add_card(slide, left, 2.03, width, title, desc)
+        if i < 3:
+            add_connector(slide, left + width, 2.55, lefts[i + 1])
+
+    box_lines = payload["box_lines"]
+    add_note_block(slide, box_lines[:3])
+    add_black_box(slide, payload["box_title"], box_lines)
 
 
 def build_final_ppt() -> None:
     if not SOURCE_PPT.exists():
         raise FileNotFoundError(f"Missing group PPT: {SOURCE_PPT}")
-
+    prs = Presentation(str(SOURCE_PPT))
+    for payload in SLIDES:
+        add_slide(prs, payload)
     OUTPUT_PPT.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(SOURCE_PPT, OUTPUT_PPT)
-
-    with zipfile.ZipFile(OUTPUT_PPT, "r") as src:
-        entries = {name: src.read(name) for name in src.namelist()}
-
-    slide_names = sorted(
-        [name for name in entries if re.search(r"ppt/slides/slide\d+\.xml$", name)],
-        key=slide_number,
-    )
-    if not slide_names:
-        raise ValueError("No slides found in group PPT")
-
-    base_slide_name = slide_names[-1]
-    base_slide_no = slide_number(base_slide_name)
-    base_rels_name = f"ppt/slides/_rels/slide{base_slide_no}.xml.rels"
-    base_slide_xml = entries[base_slide_name]
-    base_rels_xml = entries.get(base_rels_name)
-
-    presentation_rels_root = ET.fromstring(entries["ppt/_rels/presentation.xml.rels"])
-    new_slide_refs: list[tuple[int, str]] = []
-
-    for offset, payload in enumerate(SLIDE_PAYLOADS, start=1):
-        new_slide_no = base_slide_no + offset
-        new_slide_name = f"ppt/slides/slide{new_slide_no}.xml"
-        new_rels_name = f"ppt/slides/_rels/slide{new_slide_no}.xml.rels"
-        rid = next_rel_id(presentation_rels_root)
-        ET.SubElement(
-            presentation_rels_root,
-            qname(REL_NS, "Relationship"),
-            {
-                "Id": rid,
-                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
-                "Target": f"slides/slide{new_slide_no}.xml",
-            },
-        )
-        new_slide_refs.append((new_slide_no, rid))
-        entries[new_slide_name] = replace_slide_text(base_slide_xml, placeholder_lines(payload))
-        if base_rels_xml:
-            entries[new_rels_name] = base_rels_xml
-        entries["[Content_Types].xml"] = add_content_type(entries["[Content_Types].xml"], new_slide_name)
-
-    # presentation_rels_root has already been extended so serialize it directly.
-    entries["ppt/_rels/presentation.xml.rels"] = ET.tostring(
-        presentation_rels_root,
-        encoding="utf-8",
-        xml_declaration=True,
-    )
-    entries["ppt/presentation.xml"] = extend_presentation_xml(entries["ppt/presentation.xml"], new_slide_refs)
-
-    with zipfile.ZipFile(OUTPUT_PPT, "w", zipfile.ZIP_DEFLATED) as dst:
-        for name, data in entries.items():
-            dst.writestr(name, data)
-
-    polish_added_slides()
+    prs.save(str(OUTPUT_PPT))
     print(f"Wrote {OUTPUT_PPT.relative_to(ROOT)}")
-
-
-def set_shape_text(slide, index: int, text: str) -> None:
-    if index >= len(slide.shapes):
-        return
-    shape = slide.shapes[index]
-    if hasattr(shape, "text"):
-        shape.text = text
-
-
-def polish_added_slides() -> None:
-    presentation = Presentation(str(OUTPUT_PPT))
-    start = len(presentation.slides) - len(SLIDE_PAYLOADS)
-    shape_map = {
-        "title": 2,
-        "subtitle": 3,
-        "section": 4,
-        "cards": [8, 9, 10, 11],
-        "detail": 12,
-    }
-    for offset, payload in enumerate(SLIDE_PAYLOADS):
-        slide = presentation.slides[start + offset]
-        set_shape_text(slide, shape_map["title"], str(payload["title"]))
-        set_shape_text(slide, shape_map["subtitle"], str(payload["subtitle"]))
-        set_shape_text(slide, shape_map["section"], str(payload["section"]))
-        for index, text in zip(shape_map["cards"], payload["cards"]):
-            set_shape_text(slide, index, str(text))
-        set_shape_text(slide, shape_map["detail"], str(payload["detail"]))
-    presentation.save(str(OUTPUT_PPT))
 
 
 if __name__ == "__main__":
