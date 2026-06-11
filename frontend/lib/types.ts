@@ -27,6 +27,7 @@ export type RetrievalExplanation = {
   total_score: number;
   importance_score: number;
   recency_score: number;
+  relevance_score: number;
   location_bonus: number;
   social_bonus: number;
   keyword_overlap_count: number;
@@ -89,8 +90,12 @@ export type WorldState = {
   time_label: string;
   running: boolean;
   tick_count: number;
+  simulation_mode: string;
   llm_enabled: boolean;
   llm_model: string | null;
+  last_llm_call_status: string;
+  reflection_trigger_reason: string | null;
+  memory_stream_count: number;
   locations: Location[];
   agents: Agent[];
   events: EventLog[];

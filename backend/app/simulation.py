@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from collections import defaultdict
@@ -18,6 +19,9 @@ class SimulationEngine:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        configured_mode = os.getenv("SIMULATION_MODE", "deterministic").strip().lower()
+        self.simulation_mode = configured_mode if configured_mode in {"deterministic", "llm"} else "deterministic"
+        self.reflection_importance_threshold = self._float_env("REFLECTION_IMPORTANCE_THRESHOLD", 2.4)
         self._speed_presets = {
             "0.5x": 4.0,
             "1x": 2.0,
@@ -27,7 +31,7 @@ class SimulationEngine:
         self._tick_interval_seconds = self._speed_presets[self._active_speed_label]
         self._snapshot_bundle: dict | None = None
         self._bookmarks = self._build_bookmarks()
-        self._cognition = AgentCognition()
+        self._cognition = AgentCognition(self.simulation_mode)
         self.reset()
 
     def reset(self) -> None:
@@ -42,7 +46,9 @@ class SimulationEngine:
             self.knowledge_status: dict[str, str] = {"alice": "08:00"}
             self.story_flags = {
                 "party_reflection_written": False,
+                "party_shared_tick_count": None,
             }
+            self.reflection_trigger_reason: str | None = None
             self.shared_pairs: set[tuple[str, str]] = set()
             self._refresh_recent_memories()
             self._ensure_plans()
@@ -87,6 +93,7 @@ class SimulationEngine:
                 "knowledge_edges": deepcopy(self.knowledge_edges),
                 "knowledge_status": deepcopy(self.knowledge_status),
                 "story_flags": deepcopy(self.story_flags),
+                "reflection_trigger_reason": self.reflection_trigger_reason,
                 "shared_pairs": deepcopy(self.shared_pairs),
                 "active_speed_label": self._active_speed_label,
             }
@@ -106,6 +113,7 @@ class SimulationEngine:
             self.knowledge_edges = bundle["knowledge_edges"]
             self.knowledge_status = bundle["knowledge_status"]
             self.story_flags = bundle["story_flags"]
+            self.reflection_trigger_reason = bundle.get("reflection_trigger_reason")
             self.shared_pairs = bundle["shared_pairs"]
             self._active_speed_label = bundle["active_speed_label"]
             self._tick_interval_seconds = self._speed_presets[self._active_speed_label]
@@ -137,6 +145,10 @@ class SimulationEngine:
             "time_label": snapshot.time_label,
             "tick_count": snapshot.tick_count,
             "phase_label": self._phase_label(snapshot),
+            "simulation_mode": snapshot.simulation_mode,
+            "llm_status": snapshot.last_llm_call_status,
+            "memory_stream_count": snapshot.memory_stream_count,
+            "reflection_trigger_reason": snapshot.reflection_trigger_reason,
             "knowledge_status": snapshot.knowledge_status,
             "knowledge_edges": [edge.model_dump() for edge in snapshot.knowledge_edges],
             "events": [event.model_dump() for event in snapshot.events[:8]],
@@ -145,7 +157,7 @@ class SimulationEngine:
                 "Plan-driven movement is visible on the town map.",
                 "Dialogue spread is recorded in the event timeline and propagation chain.",
                 "Retrieved memories explain why an agent acts in the current context.",
-                "Reflection appears only after information becomes shared social knowledge.",
+                "Reflection appears after social knowledge spreads and memory importance crosses the threshold.",
             ],
         }
 
@@ -213,6 +225,14 @@ class SimulationEngine:
                 agent.current_action = decision.summary
                 agent.last_utterance = decision.utterance
                 agent.reasoning_note = decision.reasoning_note
+                self._remember(
+                    agent,
+                    "action",
+                    f"I chose this action: {decision.summary}.",
+                    agent.current_location_id,
+                    0.22,
+                    [other.id for other in nearby_agents],
+                )
 
             self._run_storyline(time_label)
             self._trim_logs()
@@ -224,8 +244,12 @@ class SimulationEngine:
                 time_label=self.current_time.strftime("%H:%M"),
                 running=self.running,
                 tick_count=self.tick_count,
+                simulation_mode=self.simulation_mode,
                 llm_enabled=self._cognition.enabled,
                 llm_model=self._cognition.model if self._cognition.enabled else None,
+                last_llm_call_status=self._cognition.last_llm_call_status,
+                reflection_trigger_reason=self.reflection_trigger_reason,
+                memory_stream_count=self._memory_stream_count(),
                 locations=deepcopy(self.locations),
                 agents=deepcopy(self.agents),
                 events=deepcopy(list(reversed(self.events[-12:]))),
@@ -374,33 +398,64 @@ class SimulationEngine:
                     preferred_speaker = next((agent for agent in knowers if agent.id != "alice"), knowers[0])
                     self._handle_pair_interaction(preferred_speaker, listener, self._location(location_id), time_label)
 
-        if time_label >= "14:30" and self._party_knowers_count() >= 3 and not self.story_flags["party_reflection_written"]:
-            self.story_flags["party_reflection_written"] = True
-            reflection_actors: list[str] = []
-            for agent in self.agents:
-                if agent.knows_party:
-                    reflection_actors.append(agent.id)
-                    reflection_text = self._cognition.generate_reflection(agent, time_label)
-                    reflection = self._memory(
-                        "reflection",
-                        reflection_text,
-                        self.current_time.strftime("%H:%M"),
-                        agent.current_location_id,
-                        0.93,
-                        ["alice", "bob", "carol"],
-                    )
-                    agent.reflections.insert(0, reflection)
-                    agent.reflections = agent.reflections[:3]
-                    agent.memory_bank.insert(0, reflection)
-                    agent.recent_memories = agent.memory_bank[:5]
-                    agent.current_action = "Reflecting on how the gathering has become shared town knowledge"
-                    agent.reasoning_note = "A new high-level reflection was formed because the social information spread across the town."
-            self._add_event(
-                "Reflection formed",
-                "The agents now treat Alice's gathering as a shared town event rather than isolated information.",
-                event_type="reflection",
-                actor_ids=reflection_actors,
-            )
+        if self._party_knowers_count() >= 3 and self.story_flags["party_shared_tick_count"] is None:
+            self.story_flags["party_shared_tick_count"] = self.tick_count
+
+        self._maybe_generate_reflections(time_label)
+
+    def _maybe_generate_reflections(self, time_label: str) -> None:
+        if self.story_flags["party_reflection_written"]:
+            return
+        if self._party_knowers_count() < 3:
+            return
+        shared_tick_count = self.story_flags.get("party_shared_tick_count")
+        if shared_tick_count is None or self.tick_count <= shared_tick_count:
+            return
+
+        eligible_agents = [agent for agent in self.agents if agent.knows_party]
+        importance_scores = {
+            agent.id: self._reflection_importance_score(agent)
+            for agent in eligible_agents
+        }
+        if not eligible_agents or any(score < self.reflection_importance_threshold for score in importance_scores.values()):
+            return
+
+        self.reflection_trigger_reason = (
+            f"Shared knowledge reached all agents and memory importance crossed "
+            f"{self.reflection_importance_threshold:.2f}: "
+            + ", ".join(f"{agent_id}={score:.2f}" for agent_id, score in importance_scores.items())
+        )
+        self._write_party_reflections(time_label)
+
+    def _write_party_reflections(self, time_label: str) -> None:
+        self.story_flags["party_reflection_written"] = True
+        reflection_actors: list[str] = []
+        for agent in self.agents:
+            if agent.knows_party:
+                reflection_actors.append(agent.id)
+                reflection_text = self._cognition.generate_reflection(agent, time_label)
+                reflection = self._memory(
+                    "reflection",
+                    reflection_text,
+                    self.current_time.strftime("%H:%M"),
+                    agent.current_location_id,
+                    0.93,
+                    ["alice", "bob", "carol"],
+                )
+                agent.reflections.insert(0, reflection)
+                agent.reflections = agent.reflections[:3]
+                agent.memory_bank.insert(0, reflection)
+                agent.recent_memories = agent.memory_bank[:5]
+                agent.current_action = "Reflecting on how the gathering has become shared town knowledge"
+                agent.reasoning_note = self.reflection_trigger_reason or (
+                    "A new high-level reflection was formed because the social information spread across the town."
+                )
+        self._add_event(
+            "Reflection formed",
+            "The agents now treat Alice's gathering as a shared town event after memory importance crossed the reflection threshold.",
+            event_type="reflection",
+            actor_ids=reflection_actors,
+        )
 
     def _memory(
         self,
@@ -518,6 +573,12 @@ class SimulationEngine:
     def _party_knowers_count(self) -> int:
         return sum(1 for agent in self.agents if agent.knows_party)
 
+    def _reflection_importance_score(self, agent: Agent) -> float:
+        return sum(memory.importance for memory in agent.memory_bank if memory.type != "reflection")
+
+    def _memory_stream_count(self) -> int:
+        return sum(len(agent.memory_bank) for agent in self.agents)
+
     def _refresh_recent_memories(self) -> None:
         for agent in self.agents:
             agent.recent_memories = agent.memory_bank[:5]
@@ -597,6 +658,10 @@ class SimulationEngine:
 - 当前时间：`{evidence['time_label']}`
 - Tick：`{evidence['tick_count']}`
 - 当前阶段：`{evidence['phase_label']}`
+- 仿真模式：`{evidence['simulation_mode']}`
+- LLM 状态：`{evidence['llm_status']}`
+- 记忆流条数：`{evidence['memory_stream_count']}`
+- 反思触发原因：`{evidence['reflection_trigger_reason'] or '尚未触发'}`
 
 ## Knowledge Status
 
@@ -618,6 +683,12 @@ class SimulationEngine:
 
 {proof_lines}
 """
+
+    def _float_env(self, name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, str(default)))
+        except ValueError:
+            return default
 
 
 engine = SimulationEngine()

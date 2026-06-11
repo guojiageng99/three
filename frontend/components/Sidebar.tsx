@@ -9,10 +9,12 @@ import {
   formatEventTypeLabel,
   formatExplanationTag,
   formatKnowledgeBadge,
+  formatLlmStatus,
   formatLocationName,
   formatModelMode,
   formatPlanSummary,
   formatRole,
+  formatSimulationMode,
   formatText,
 } from "@/lib/presenter";
 
@@ -25,8 +27,12 @@ type SidebarProps = {
   dayLabel: string;
   timeLabel: string;
   tickCount: number;
+  simulationMode: string;
   llmEnabled: boolean;
   llmModel: string | null;
+  lastLlmCallStatus: string;
+  memoryStreamCount: number;
+  reflectionTriggerReason: string | null;
   activeSpeedLabel: string;
   snapshotStatus: SnapshotStatus;
   latestEvent: EventLog | null;
@@ -44,8 +50,12 @@ export function Sidebar({
   dayLabel,
   timeLabel,
   tickCount,
+  simulationMode,
   llmEnabled,
   llmModel,
+  lastLlmCallStatus,
+  memoryStreamCount,
+  reflectionTriggerReason,
   activeSpeedLabel,
   snapshotStatus,
   latestEvent,
@@ -71,6 +81,10 @@ export function Sidebar({
           </div>
           <div>
             <span className="status-key">模式</span>
+            <strong>{formatSimulationMode(simulationMode)}</strong>
+          </div>
+          <div>
+            <span className="status-key">模型</span>
             <strong>{formatModelMode(llmEnabled, llmModel)}</strong>
           </div>
           <div>
@@ -80,6 +94,14 @@ export function Sidebar({
           <div>
             <span className="status-key">快照</span>
             <strong>{snapshotStatus.exists ? "已保存" : "暂无"}</strong>
+          </div>
+          <div>
+            <span className="status-key">记忆流</span>
+            <strong>{memoryStreamCount}</strong>
+          </div>
+          <div>
+            <span className="status-key">LLM</span>
+            <strong>{formatLlmStatus(lastLlmCallStatus)}</strong>
           </div>
         </div>
         <p className="snapshot-copy">
@@ -174,6 +196,10 @@ export function Sidebar({
               <span className="callout-label">当前最重要的反思</span>
               <p>{primaryReflection?.text ? formatText(primaryReflection.text) : "当前还没有形成高层反思，可以继续推进到 14:30 左右再看。"}</p>
             </div>
+            <div className="callout-card subtle">
+              <span className="callout-label">反思触发依据</span>
+              <p>{reflectionTriggerReason ? formatText(reflectionTriggerReason) : "尚未达到共享知识和记忆重要性阈值。"}</p>
+            </div>
           </>
         ) : (
           <p>尚未选择角色。</p>
@@ -248,7 +274,8 @@ export function Sidebar({
                         {explanationByMemoryId.get(memory.id) ? (
                           <p className="score-copy">
                             分数 {explanationByMemoryId.get(memory.id)?.total_score.toFixed(2)} · 关键词重叠{" "}
-                            {explanationByMemoryId.get(memory.id)?.keyword_overlap_count}
+                            {explanationByMemoryId.get(memory.id)?.keyword_overlap_count} · 相关性{" "}
+                            {explanationByMemoryId.get(memory.id)?.relevance_score.toFixed(2)}
                           </p>
                         ) : null}
                       </div>

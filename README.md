@@ -80,7 +80,7 @@ cd three
 
 - 前端：Next.js + React
 - 后端：FastAPI + Python
-- 模型模式：OpenAI 兼容接口 / 稳定规则回退模式
+- 模型模式：`deterministic` 稳定规则演示 / `llm` OpenAI 兼容智能体模式
 
 ## 七、运行环境要求
 
@@ -120,6 +120,12 @@ conda activate ga-demo
 ```bash
 conda create -n ga-demo python=3.12 -y
 conda run -n ga-demo python -m pip install -r backend/requirements.txt
+```
+
+如果要运行测试，再安装开发依赖：
+
+```bash
+conda run -n ga-demo python -m pip install -r backend/requirements-dev.txt
 ```
 
 ### 2. 后端启动
@@ -459,30 +465,85 @@ NEXT_PUBLIC_API_BASE
 
 - 这是课程作业级 demo，不是论文原始系统的全量复现
 - 当前只有 4 个地点和 3 个角色
-- 主线剧情是稳定可控的，方便录视频和答辩
-- 规则回退模式优先保证稳定和可解释性，而不是开放式生成
+- 主线剧情在 `deterministic` 模式下稳定可控，方便录视频和答辩
+- `llm` 模式可以让计划、行动、对话和反思更多由模型生成，但仍会在失败时规则回退
+- 反思不再只是固定时间写死触发，而是在传播完成后由记忆重要性阈值触发
 
 ## 十七、可选的大模型模式
 
-后端支持 OpenAI 兼容接口。
+后端支持两种模式：
+
+- `SIMULATION_MODE=deterministic`：默认模式，不需要 API key，适合答辩和录屏
+- `SIMULATION_MODE=llm`：启用 OpenAI 兼容接口，让 LLM 参与计划、行动、对话和反思生成
+
+反思阈值可选配置：
+
+- `REFLECTION_IMPORTANCE_THRESHOLD`：默认 `2.4`，表示共享信息传播完成后，角色记忆重要性累计到阈值才形成 reflection
 
 Windows cmd：
 
 ```bat
+set SIMULATION_MODE=llm
 set LLM_API_KEY=your_key
 set LLM_BASE_URL=https://api.openai.com/v1
 set LLM_MODEL=gpt-4o-mini
+set REFLECTION_IMPORTANCE_THRESHOLD=2.4
 ```
 
 Windows PowerShell：
 
 ```powershell
+$env:SIMULATION_MODE="llm"
 $env:LLM_API_KEY="your_key"
 $env:LLM_BASE_URL="https://api.openai.com/v1"
 $env:LLM_MODEL="gpt-4o-mini"
+$env:REFLECTION_IMPORTANCE_THRESHOLD="2.4"
 ```
 
-如果不配置 `LLM_API_KEY`，系统仍会使用 deterministic 规则回退模式正常运行。
+如果不配置 `SIMULATION_MODE=llm`，系统会使用 deterministic 规则演示模式；如果选择 `llm` 但没有 `LLM_API_KEY` 或接口失败，系统会自动规则回退并继续运行。界面右侧会显示当前模式、LLM 最近状态、记忆流条数和 reflection 触发原因。
+
+### LLM 模式演示流程
+
+如果想把复现讲得更“像论文”，推荐用 `llm` 模式跑一遍。  
+这个模式下，环境、角色相遇和传播链仍由程序保证稳定；但 daily plan、当前行动、对话内容和 reflection 文本会优先交给 LLM 生成。这样既能避免课堂 demo 翻车，又能说明系统确实接入了论文里的 generative cognition。
+
+启动后端前先配置：
+
+```powershell
+$env:SIMULATION_MODE="llm"
+$env:LLM_API_KEY="your_key"
+$env:LLM_BASE_URL="https://api.openai.com/v1"
+$env:LLM_MODEL="gpt-4o-mini"
+$env:REFLECTION_IMPORTANCE_THRESHOLD="2.4"
+```
+
+然后正常启动后端和前端。打开页面后，建议按下面顺序演示：
+
+1. 点击 `08:00 初始态`
+   - 现象：右侧全局状态显示 `LLM 智能体模式`，模型栏显示配置的模型名；只有 Alice 知道聚会。
+   - 论文机制：说明 agent 有 persona、初始记忆和内部状态，对应 persistent internal state 与 planning 起点。
+
+2. 点击 `10:00 第一次传播`
+   - 现象：Alice 和 Bob 在咖啡馆相遇，Bob 获得聚会信息，传播链出现 `Alice -> Bob`；最新话语和当前行动会优先由 LLM 生成。
+   - 论文机制：说明角色根据地点、计划、附近人物和检索记忆生成行动与对话，对应 observation、retrieval、action generation、memory update。
+
+3. 点击 Bob，展开 `认知细节`
+   - 现象：可以看到检索到的记忆、分数、关键词重叠和相关性；全局 `记忆流` 数量增加。
+   - 论文机制：说明 agent 不是直接读取全部记忆，而是从 memory stream 中检索相关内容，对应 memory stream 和 retrieval function。
+
+4. 点击 `14:00 第二次传播`
+   - 现象：Bob 在广场把消息告诉 Carol，传播链变成 `Alice -> Bob`、`Bob -> Carol`，此时通常还没有 reflection。
+   - 论文机制：说明信息不是全局广播，而是通过环境中的局部相遇逐步扩散，对应 multi-agent social behavior 和 environment-mediated interaction。
+
+5. 点击 `14:30 反思形成态`
+   - 现象：三位角色都知道聚会，reflection 数量变成 `3`，右侧出现 `反思触发依据`。
+   - 论文机制：说明 reflection 不是单条事件，而是共享信息传播完成后，记忆重要性累计超过阈值形成的高层抽象，对应论文中的 reflection 和 higher-level memory abstraction。
+
+答辩时可以这样概括：
+
+> 本项目提供 deterministic 和 llm 两种模式。deterministic 模式用于稳定录屏和课堂演示；llm 模式让大模型参与计划、行动、对话和反思生成，更接近 Generative Agents 论文中的认知生成过程。同时系统保留规则回退，避免 API 失败导致 demo 中断。
+
+需要注意的是，当前项目是课程作业级 LLM 增强复现，不是 Stanford 原版 Smallville 的完整工程复刻。它已经支持 LLM 参与核心认知闭环，但没有实现 25 个 agent、完整沙盒世界、embedding retrieval 和长期多日生活模拟。
 
 ## 十八、课程提交材料
 

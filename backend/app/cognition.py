@@ -36,11 +36,14 @@ class DialogueDecision:
 
 
 class AgentCognition:
-    def __init__(self) -> None:
+    def __init__(self, simulation_mode: str | None = None) -> None:
+        configured_mode = (simulation_mode or os.getenv("SIMULATION_MODE", "deterministic")).strip().lower()
+        self.simulation_mode = configured_mode if configured_mode in {"deterministic", "llm"} else "deterministic"
         self.api_key = os.getenv("LLM_API_KEY", "").strip()
         self.base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
         self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
-        self.enabled = bool(self.api_key)
+        self.enabled = self.simulation_mode == "llm" and bool(self.api_key)
+        self.last_llm_call_status = self._initial_llm_status()
 
     def generate_plan(self, agent: Agent, locations: list[Location], day_label: str) -> list[PlanItem] | None:
         if self.enabled:
@@ -126,12 +129,14 @@ class AgentCognition:
             recency_bonus = self._recency_score(memory.timestamp, time_label)
             recency_score = recency_bonus * 0.2
             keyword_score = overlap * 0.06
-            score = importance_score + recency_score + location_bonus + social_bonus + keyword_score
+            relevance_score = keyword_score
+            score = importance_score + recency_score + relevance_score + location_bonus + social_bonus
             explanation = RetrievalExplanation(
                 memory_id=memory.id,
                 total_score=round(score, 4),
                 importance_score=round(importance_score, 4),
                 recency_score=round(recency_score, 4),
+                relevance_score=round(relevance_score, 4),
                 location_bonus=round(location_bonus, 4),
                 social_bonus=round(social_bonus, 4),
                 keyword_overlap_count=overlap,
@@ -315,6 +320,10 @@ class AgentCognition:
         )
 
     def _chat_json(self, system_prompt: str, user_payload: dict) -> dict | None:
+        if not self.enabled:
+            self.last_llm_call_status = self._initial_llm_status()
+            return None
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -333,25 +342,40 @@ class AgentCognition:
                 response.raise_for_status()
                 payload = response.json()
         except Exception:
+            self.last_llm_call_status = "fallback: llm_request_failed"
             return None
 
         try:
             content = payload["choices"][0]["message"]["content"]
         except Exception:
+            self.last_llm_call_status = "fallback: invalid_llm_response"
             return None
         if isinstance(content, list):
             content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
         cleaned = self._strip_code_fence(str(content))
         try:
-            return json.loads(cleaned)
+            parsed = json.loads(cleaned)
+            self.last_llm_call_status = "ok"
+            return parsed
         except json.JSONDecodeError:
             match = re.search(r"\{.*\}", cleaned, re.S)
             if not match:
+                self.last_llm_call_status = "fallback: invalid_json"
                 return None
             try:
-                return json.loads(match.group(0))
+                parsed = json.loads(match.group(0))
+                self.last_llm_call_status = "ok"
+                return parsed
             except json.JSONDecodeError:
+                self.last_llm_call_status = "fallback: invalid_json"
                 return None
+
+    def _initial_llm_status(self) -> str:
+        if self.simulation_mode != "llm":
+            return "disabled: deterministic_mode"
+        if not self.api_key:
+            return "disabled: missing_api_key"
+        return "ready"
 
     def _build_reasoning_note(
         self,

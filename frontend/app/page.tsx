@@ -478,8 +478,12 @@ export default function HomePage() {
             dayLabel={world.day_label}
             timeLabel={world.time_label}
             tickCount={world.tick_count}
+            simulationMode={world.simulation_mode}
             llmEnabled={world.llm_enabled}
             llmModel={world.llm_model}
+            lastLlmCallStatus={world.last_llm_call_status}
+            memoryStreamCount={world.memory_stream_count}
+            reflectionTriggerReason={world.reflection_trigger_reason}
             activeSpeedLabel={world.active_speed_label}
             snapshotStatus={world.snapshot_status}
             latestEvent={latestEvent}

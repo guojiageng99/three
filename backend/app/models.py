@@ -32,6 +32,7 @@ class RetrievalExplanation(BaseModel):
     total_score: float
     importance_score: float
     recency_score: float
+    relevance_score: float = 0.0
     location_bonus: float
     social_bonus: float
     keyword_overlap_count: int
@@ -95,8 +96,12 @@ class WorldState(BaseModel):
     time_label: str
     running: bool
     tick_count: int
+    simulation_mode: str = "deterministic"
     llm_enabled: bool
     llm_model: str | None = None
+    last_llm_call_status: str = "disabled"
+    reflection_trigger_reason: str | None = None
+    memory_stream_count: int = 0
     locations: list[Location]
     agents: list[Agent]
     events: list[EventLog]

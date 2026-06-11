@@ -51,6 +51,7 @@ const exactTextMap: Record<string, string> = {
   "Bob knows the gathering and sees Carol nearby, so the social information is shared.": "Bob 已经知道聚会信息，而且看到附近的 Carol，于是把消息继续传播了出去。",
   "Carol received new social information from Bob during the encounter.": "Carol 在这次相遇中从 Bob 那里得到了新的社交信息。",
   "A new high-level reflection was formed because the social information spread across the town.": "由于这条社交信息已经传播到全镇，系统因此生成了新的高层反思。",
+  "The agents now treat Alice's gathering as a shared town event after memory importance crossed the reflection threshold.": "记忆重要性累计超过反思阈值后，角色们把 Alice 的聚会看成了全镇共享事件。",
   "I want tonight's gathering to feel casual and welcoming.": "我希望今晚的聚会轻松、自然，而且让人愿意参加。",
   "I should spend some time writing at the cafe today.": "我今天应该去咖啡馆待一会儿，顺便写点东西。",
   "The square is busiest in the afternoon.": "广场在下午通常最热闹。",
@@ -78,6 +79,21 @@ const explanationTagMap: Record<string, string> = {
   "keyword overlap": "关键词重合",
   "baseline relevance": "基础相关",
   "explanation unavailable": "暂无解释",
+};
+
+const simulationModeMap: Record<string, string> = {
+  deterministic: "稳定规则演示",
+  llm: "LLM 智能体模式",
+};
+
+const llmStatusMap: Record<string, string> = {
+  "disabled: deterministic_mode": "规则模式未调用 LLM",
+  "disabled: missing_api_key": "LLM 模式缺少 API Key",
+  ready: "LLM 已就绪",
+  ok: "最近一次 LLM 调用成功",
+  "fallback: llm_request_failed": "LLM 调用失败，已规则回退",
+  "fallback: invalid_llm_response": "LLM 响应异常，已规则回退",
+  "fallback: invalid_json": "LLM JSON 解析失败，已规则回退",
 };
 
 const agentNameMap: Record<string, string> = {
@@ -147,6 +163,14 @@ function translateStructuredText(text: string): string {
     (_match, summary, location, nearby, memoryCue) =>
       `当前计划重点：${formatPlanSummary(summary)}。当前位置：${formatLocationName(location)}。附近角色：${nearby === "No nearby agents" ? "暂无" : nearby}。最关键的记忆线索：${formatText(memoryCue)}`,
   );
+  result = result.replace(
+    /^I chose this action: (.+)\.$/,
+    (_match, action) => `我选择了这个行动：${formatActionText(action)}。`,
+  );
+  result = result.replace(
+    /^Shared knowledge reached all agents and memory importance crossed ([\d.]+): (.+)$/,
+    (_match, threshold, scores) => `共享信息已经覆盖所有角色，且记忆重要性超过 ${threshold} 阈值：${scores}`,
+  );
 
   return replaceExact(result);
 }
@@ -205,6 +229,20 @@ export function formatKnowledgeBadge(knowsParty: boolean): string {
 
 export function formatModelMode(llmEnabled: boolean, llmModel: string | null): string {
   return llmEnabled ? llmModel ?? "LLM 模式" : "规则回退模式";
+}
+
+export function formatSimulationMode(mode: string | null | undefined): string {
+  if (!mode) {
+    return "未知模式";
+  }
+  return simulationModeMap[mode] ?? mode;
+}
+
+export function formatLlmStatus(status: string | null | undefined): string {
+  if (!status) {
+    return "未知状态";
+  }
+  return llmStatusMap[status] ?? status;
 }
 
 export function formatExplanationTag(tag: string): string {
