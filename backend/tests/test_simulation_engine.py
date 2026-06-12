@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.cognition import AgentCognition
+from app.cognition import DEFAULT_BAILIAN_BASE_URL, DEFAULT_BAILIAN_MODEL, AgentCognition
 from app.main import app
 from app.simulation import SimulationEngine
 
@@ -110,6 +110,82 @@ def test_state_endpoint_exposes_mode_and_memory_fields() -> None:
     assert "last_llm_call_status" in payload
 
 
+def test_bailian_defaults_and_dashscope_key_alias(monkeypatch) -> None:
+    monkeypatch.setenv("SIMULATION_MODE", "llm")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "dashscope-test-key")
+
+    cognition = AgentCognition()
+
+    assert cognition.enabled is True
+    assert cognition.api_key == "dashscope-test-key"
+    assert cognition.base_url == DEFAULT_BAILIAN_BASE_URL
+    assert cognition.model == DEFAULT_BAILIAN_MODEL
+    assert cognition.provider == "aliyun-bailian"
+    assert cognition.last_llm_call_status == "ready"
+
+
+def test_snapshot_exposes_bailian_provider_and_model(monkeypatch) -> None:
+    monkeypatch.setenv("SIMULATION_MODE", "deterministic")
+    engine = SimulationEngine()
+    monkeypatch.setenv("SIMULATION_MODE", "llm")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "dashscope-test-key")
+    engine.simulation_mode = "llm"
+    engine._cognition = AgentCognition()
+
+    snapshot = engine.snapshot()
+
+    assert snapshot.llm_provider == "aliyun-bailian"
+    assert snapshot.llm_model == "qwen-plus"
+
+
+def test_llm_action_prompt_uses_selected_agent_private_context(monkeypatch) -> None:
+    monkeypatch.setenv("SIMULATION_MODE", "deterministic")
+    engine = SimulationEngine()
+    bob = next(agent for agent in engine.agents if agent.id == "bob")
+    alice = next(agent for agent in engine.agents if agent.id == "alice")
+    alice.memory_bank.insert(
+        0,
+        engine._memory(
+            "observation",
+            "Alice keeps a private guest list that Bob has not learned.",
+            "08:00",
+            "home_alice",
+            0.9,
+        ),
+    )
+
+    monkeypatch.setenv("SIMULATION_MODE", "llm")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    cognition = AgentCognition()
+    captured_payload = {}
+
+    def fake_chat_json(system_prompt: str, user_payload: dict) -> dict:
+        captured_payload.update(user_payload)
+        return {"summary": "Bob writes notes at the park.", "utterance": "I should keep observing the town."}
+
+    monkeypatch.setattr(cognition, "_chat_json", fake_chat_json)
+
+    cognition.generate_action(
+        agent=bob,
+        active_plan=bob.active_plan,
+        current_location=engine._location(bob.current_location_id),
+        nearby_agents=[],
+        retrieved_memories=bob.memory_bank,
+        time_label="08:00",
+    )
+
+    assert captured_payload["agent"]["name"] == "Bob"
+    assert "private guest list" not in " ".join(captured_payload["retrieved_memories"])
+    assert "Do not invent hidden memories" in captured_payload["instruction"]
+
+
 def test_bookmark_jump_matches_reflection_demo_state() -> None:
     engine = SimulationEngine()
 
@@ -123,11 +199,12 @@ def test_bookmark_jump_matches_reflection_demo_state() -> None:
 
 
 def test_llm_mode_falls_back_when_request_fails(monkeypatch) -> None:
+    monkeypatch.setenv("SIMULATION_MODE", "deterministic")
+    engine = SimulationEngine()
     monkeypatch.setenv("SIMULATION_MODE", "llm")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:9/v1")
     cognition = AgentCognition()
-    engine = SimulationEngine()
     agent = next(item for item in engine.agents if item.id == "alice")
 
     decision = cognition.generate_action(
@@ -140,4 +217,27 @@ def test_llm_mode_falls_back_when_request_fails(monkeypatch) -> None:
     )
 
     assert decision.summary
-    assert cognition.last_llm_call_status == "fallback: llm_request_failed"
+    assert cognition.last_llm_call_status.startswith("error:")
+
+
+def test_llm_mode_falls_back_when_api_key_missing(monkeypatch) -> None:
+    monkeypatch.setenv("SIMULATION_MODE", "deterministic")
+    engine = SimulationEngine()
+    monkeypatch.setenv("SIMULATION_MODE", "llm")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    cognition = AgentCognition()
+    agent = next(item for item in engine.agents if item.id == "alice")
+
+    decision = cognition.generate_action(
+        agent=agent,
+        active_plan=agent.active_plan,
+        current_location=engine._location(agent.current_location_id),
+        nearby_agents=[],
+        retrieved_memories=agent.memory_bank,
+        time_label="08:00",
+    )
+
+    assert decision.summary
+    assert cognition.enabled is False
+    assert cognition.last_llm_call_status == "disabled: missing_api_key"

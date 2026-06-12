@@ -18,6 +18,9 @@ from .prompt_templates import (
     REFLECTION_SYSTEM_PROMPT,
 )
 
+DEFAULT_BAILIAN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_BAILIAN_MODEL = "qwen-plus"
+
 
 @dataclass
 class ActionDecision:
@@ -37,13 +40,21 @@ class DialogueDecision:
     listener_learns_party: bool = False
 
 
+class LlmGenerationError(Exception):
+    def __init__(self, status: str, message: str) -> None:
+        self.status = status
+        self.message = message
+        super().__init__(message)
+
+
 class AgentCognition:
     def __init__(self, simulation_mode: str | None = None) -> None:
         configured_mode = (simulation_mode or os.getenv("SIMULATION_MODE", "deterministic")).strip().lower()
         self.simulation_mode = configured_mode if configured_mode in {"deterministic", "llm"} else "deterministic"
-        self.api_key = os.getenv("LLM_API_KEY", "").strip()
-        self.base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+        self.api_key = self._env_first("LLM_API_KEY", "DASHSCOPE_API_KEY")
+        self.base_url = os.getenv("LLM_BASE_URL", DEFAULT_BAILIAN_BASE_URL).rstrip("/")
+        self.model = os.getenv("LLM_MODEL", DEFAULT_BAILIAN_MODEL)
+        self.provider = os.getenv("LLM_PROVIDER", "aliyun-bailian").strip() or "aliyun-bailian"
         self.enabled = self.simulation_mode == "llm" and bool(self.api_key)
         self.timeout_seconds = self._float_env("LLM_TIMEOUT_SECONDS", 60.0)
         self.debug_log_enabled = self._truthy_env("LLM_DEBUG_LOG")
@@ -51,39 +62,8 @@ class AgentCognition:
         self.last_llm_call_status = self._initial_llm_status()
 
     def generate_plan(self, agent: Agent, locations: list[Location], day_label: str) -> list[PlanItem] | None:
-        if self.enabled:
-            prompt = {
-                "day": day_label,
-                "agent": {
-                    "name": agent.name,
-                    "role": agent.role,
-                    "personality": agent.personality,
-                    "profile_summary": agent.profile_summary,
-                    "knows_party": agent.knows_party,
-                },
-                "available_locations": [
-                    {"location_id": location.id, "name": location.name, "description": location.description}
-                    for location in locations
-                ],
-                "existing_reflections": [memory.text for memory in agent.reflections[:3]],
-            }
-            response = self._chat_json(system_prompt=PLAN_SYSTEM_PROMPT, user_payload=prompt)
-            if response:
-                items = response.get("plan")
-                if isinstance(items, list):
-                    valid_location_ids = {location.id for location in locations}
-                    parsed: list[PlanItem] = []
-                    for item in items[:4]:
-                        if not isinstance(item, dict):
-                            continue
-                        time_slot = str(item.get("time_slot", "")).strip()
-                        location_id = str(item.get("location_id", "")).strip()
-                        summary = str(item.get("summary", "")).strip()
-                        if time_slot and location_id in valid_location_ids and summary:
-                            parsed.append(PlanItem(time_slot=time_slot, location_id=location_id, summary=summary))
-                    if parsed:
-                        parsed.sort(key=lambda plan_item: plan_item.time_slot)
-                        return parsed
+        # 计划由 simulation engine 硬编码以保证剧情节点（10:00 咖啡馆相遇、14:00 广场传播等）
+        # 大模型仅负责生成对话、行为和反思文本，不覆盖计划
         return None
 
     def retrieve_memories(
@@ -169,6 +149,7 @@ class AgentCognition:
     ) -> ActionDecision:
         if self.enabled:
             prompt = {
+                "language": "zh-CN",
                 "time": time_label,
                 "agent": {
                     "name": agent.name,
@@ -181,7 +162,12 @@ class AgentCognition:
                 "location": current_location.model_dump(),
                 "nearby_agents": [other.name for other in nearby_agents],
                 "retrieved_memories": [memory.text for memory in retrieved_memories],
-                "instruction": "Return compact JSON with keys summary and utterance. Keep the action concrete and visible for a UI demo.",
+                "instruction": (
+                    "Return compact JSON with keys summary and utterance. Speak as this one agent only. "
+                    "Use only the provided profile, plan, location, nearby agents, and retrieved memories. "
+                    "Do not invent hidden memories or directly modify world state. "
+                    "The summary and utterance must be Simplified Chinese because they are shown directly on the observation board."
+                ),
             }
             response = self._chat_json(
                 system_prompt=ACTION_SYSTEM_PROMPT,
@@ -209,6 +195,7 @@ class AgentCognition:
     ) -> DialogueDecision:
         if self.enabled:
             prompt = {
+                "language": "zh-CN",
                 "time": time_label,
                 "location": current_location.name,
                 "speaker": {
@@ -227,7 +214,9 @@ class AgentCognition:
                 "instruction": (
                     "Return JSON with event_title, event_detail, speaker_utterance, listener_utterance, "
                     "speaker_memory, listener_memory, listener_learns_party. The dialogue should stay natural, short, "
-                    "and centered on whether the listener learns about Alice's evening gathering."
+                    "and centered on whether the listener learns about Alice's evening gathering. The backend decides "
+                    "whether and how to write the returned memory strings into each private memory stream. "
+                    "All returned text fields must be Simplified Chinese because they are shown directly in the UI."
                 ),
             }
             response = self._chat_json(
@@ -254,9 +243,16 @@ class AgentCognition:
         source_memories = agent.memory_bank[:5]
         if self.enabled and source_memories:
             prompt = {
+                "language": "zh-CN",
                 "time": time_label,
-                "agent": agent.name,
+                "agent": {
+                    "name": agent.name,
+                    "role": agent.role,
+                    "personality": agent.personality,
+                    "profile_summary": agent.profile_summary,
+                },
                 "recent_memories": [memory.text for memory in source_memories],
+                "instruction": "Summarize only this agent's own recent memories into one higher-level reflection. Return Simplified Chinese.",
             }
             response = self._chat_json(
                 system_prompt=REFLECTION_SYSTEM_PROMPT,
@@ -358,7 +354,7 @@ class AgentCognition:
                 response_body=self._truncate(exc.response.text),
                 elapsed_ms=self._elapsed_ms(started_at),
             )
-            self.last_llm_call_status = "fallback: llm_request_failed"
+            self.last_llm_call_status = "error:llm_request_failed"
             return None
         except Exception as exc:
             self._write_llm_debug_log(
@@ -368,7 +364,7 @@ class AgentCognition:
                 error=str(exc),
                 elapsed_ms=self._elapsed_ms(started_at),
             )
-            self.last_llm_call_status = "fallback: llm_request_failed"
+            self.last_llm_call_status = "error:llm_request_failed"
             return None
 
         try:
@@ -382,7 +378,7 @@ class AgentCognition:
                 response_body=self._truncate(json.dumps(payload, ensure_ascii=False)),
                 elapsed_ms=self._elapsed_ms(started_at),
             )
-            self.last_llm_call_status = "fallback: invalid_llm_response"
+            self.last_llm_call_status = "error:invalid_llm_response"
             return None
         if isinstance(content, list):
             content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
@@ -402,7 +398,7 @@ class AgentCognition:
                     parse_strategy="direct_json",
                     elapsed_ms=self._elapsed_ms(started_at),
                 )
-                self.last_llm_call_status = "fallback: invalid_json"
+                self.last_llm_call_status = "error:invalid_json"
                 return None
             try:
                 parsed = json.loads(match.group(0))
@@ -422,7 +418,7 @@ class AgentCognition:
                     parse_strategy="json_object_extracted",
                     elapsed_ms=self._elapsed_ms(started_at),
                 )
-                self.last_llm_call_status = "fallback: invalid_json"
+                self.last_llm_call_status = "error:invalid_json"
                 return None
 
     def _truthy_env(self, name: str) -> bool:
@@ -456,6 +452,7 @@ class AgentCognition:
             "status": status,
             "url": request_url,
             "model": self.model,
+            "provider": self.provider,
             "simulation_mode": self.simulation_mode,
             "api_key_present": bool(self.api_key),
             "timeout_seconds": self.timeout_seconds,
@@ -484,6 +481,32 @@ class AgentCognition:
         if not self.api_key:
             return "disabled: missing_api_key"
         return "ready"
+
+    def _ensure_llm_configured(self) -> None:
+        if self.simulation_mode == "llm" and not self.api_key:
+            raise LlmGenerationError(
+                "disabled:missing_api_key",
+                "大模型模式已开启但未配置 LLM_API_KEY 或 DASHSCOPE_API_KEY",
+            )
+
+    def _env_first(self, *names: str) -> str:
+        for name in names:
+            value = os.getenv(name, "").strip()
+            if value:
+                return value
+        return ""
+
+    def _raise_llm_error(self, context: str) -> None:
+        status = self.last_llm_call_status
+        if status.startswith("fallback:"):
+            status = "error:" + status.removeprefix("fallback:").strip()
+        messages = {
+            "error:llm_request_failed": f"大模型 API 请求失败：{context}",
+            "error:invalid_llm_response": f"大模型响应格式异常：{context}",
+            "error:invalid_json": f"大模型返回的 JSON 无法解析：{context}",
+        }
+        message = messages.get(status, f"大模型生成失败：{context}")
+        raise LlmGenerationError(status, message)
 
     def _build_reasoning_note(
         self,

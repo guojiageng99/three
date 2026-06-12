@@ -101,9 +101,11 @@ cd three
 1. 准备 Python `3.10+` 和 Node.js
 2. 安装后端依赖 `backend/requirements.txt`
 3. 安装前端依赖 `frontend/package.json`
-4. 启动后端 `8000` 端口
+4. 在 `backend/` 目录启动后端（默认 `127.0.0.1:8000`）
 5. 设置 `NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000`
-6. 启动前端并打开 `http://localhost:3000` 或 `http://127.0.0.1:3001`
+6. 在 `frontend/` 目录启动前端，打开终端提示的地址（常见 `localhost:3000` 或 `127.0.0.1:3001`）
+
+若后端报 `[WinError 10013]`，先释放 8000 端口，详见「九、推荐启动方式 → 启动失败」。
 
 ## 九、推荐启动方式
 
@@ -130,12 +132,14 @@ conda run -n ga-demo python -m pip install -r backend/requirements-dev.txt
 
 ### 2. 后端启动
 
+在 **`backend/` 目录** 下执行（命令本身没有变，仍是 uvicorn）：
+
 #### Windows cmd / Anaconda Prompt
 
 ```bat
 conda activate ga-demo
 cd E:\demo\buaa\suanfa\three\backend
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 #### Windows PowerShell
@@ -143,14 +147,47 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```powershell
 conda activate ga-demo
 cd E:\demo\buaa\suanfa\three\backend
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+看到 `Application startup complete` 后，另开终端启动前端。可用下面命令确认后端已就绪：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/api/state | Select-Object time_label, simulation_mode
 ```
 
 #### 如果 Conda 激活有问题，也可以直接指定解释器启动
 
 ```powershell
 cd E:\demo\buaa\suanfa\three\backend
-& "D:\anaconda\install\envs\ga-demo\python.exe" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+& "D:\anaconda\install\envs\ga-demo\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+#### 启动失败：`[WinError 10013]` 或 `[WinError 10048]`
+
+这通常表示 **8000 端口已被占用**（上次 uvicorn 没关、IDE 里还跑着旧进程、或别的程序占了端口），不是启动命令改了。
+
+PowerShell 查占用并结束进程：
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty OwningProcess -Unique |
+  ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+```
+
+或用 cmd：
+
+```bat
+netstat -ano | findstr :8000
+taskkill /PID <上一步最后一列的 PID> /F
+```
+
+然后重新执行上面的 uvicorn 命令。
+
+若仍报 10013，可换端口（需同步改前端 `NEXT_PUBLIC_API_BASE`）：
+
+```powershell
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 ### 3. 前端启动
@@ -173,17 +210,19 @@ npm install
 npm run dev
 ```
 
-前后端都启动后，打开：
+前后端都启动后，打开终端里 **Next.js 提示的地址**（常见如下）：
 
 ```text
 http://localhost:3000
 ```
 
-或者：
+若 3000 已被占用，Next 会自动改用 3001：
 
 ```text
 http://127.0.0.1:3001
 ```
+
+页面长时间显示「正在等待后端仿真状态」时，先确认 `http://127.0.0.1:8000/api/state` 能打开。
 
 ## 十、界面操作说明
 
@@ -206,189 +245,285 @@ http://127.0.0.1:3001
   - 这一步说明什么
   - 接下来怎么点
 
-## 十一、详细演示步骤
+## 十一、从开始到结束录制复现视频
 
-这一部分是最适合录 10 分钟视频和课堂答辩的讲解路线。  
-每一步都回答三个问题：
+这一节可以直接当作录屏脚本使用。主视频建议走书签路线，少用自动播放，这样更稳定，也更容易把论文机制讲清楚。  
+如果你启用了 LLM 模式，可以把它作为加分展示：角色的行动、话语和反思优先由百炼/Qwen 生成；如果某次大模型调用失败，系统会用规则兜底，机制展示仍然成立。
 
-1. 点什么
-2. 看到什么
-3. 对应论文中的哪个机制
+### 录制前先做一次检查
 
-### 先解释两个词
+先确认后端和前端都已经启动，然后打开前端页面。
 
-- `gathering`：Alice 晚上的聚会/社交活动
-- `reflection`：角色把多条低层记忆总结成一个更高层的认识，也可以直接讲成“高层反思”
+你应该先看三个地方：
 
-例如：
+- 右上角连接状态是否是 `已连接`
+- 右侧 `全局状态` 里的模式是否是 `规则模式` 或 `大模型智能体模式`
+- 如果使用 LLM 模式，`大模型` 状态最好是 `大模型已就绪` 或 `最近一次大模型调用成功`
 
-- 低层记忆：`Alice 告诉了 Bob gathering`
-- 低层记忆：`Bob 又告诉了 Carol gathering`
-- 高层 reflection：`这件事已经不再是私人信息，而变成了镇上的共享信息`
+录屏时可以这样说：
 
-### 第一步：看 08:00 初始态
+> 这个系统有两种运行方式。规则模式保证录屏稳定，大模型模式让角色的行动、对话和反思更多由百炼/Qwen 生成，而计划始终由程序硬编码以保证剧情节点稳定。无论哪种模式，世界时间、相遇检测、传播链和反思触发都由程序护栏保证，所以演示不会因为一次 API 波动而中断。
+
+### 第一步：重置到 08:00 初始态
 
 点击：
 
-- `08:00 初始态`
-- 或 `重置场景`
+- **重置场景**
+- 或 **08:00 初始态**
 
-你应该看到：
+看哪里：
 
-- 时间变成 `08:00`
-- 界面出现 `当前书签说明`
+- 右侧 **时间线** 区域
+- 中间 **地图视图**
+- 右侧 **三人状态**
+- 下方 **当前阶段**
+
+应该看到：
+
+- 当前时间变成 `08:00`
 - Alice 在 `Alice 家`
 - Bob 在 `约翰逊公园`
 - Carol 在 `镇中心广场`
-- 只有 Alice 知道聚会信息
+- 三人状态里只有 Alice 是 `已知聚会`
+- Bob 和 Carol 仍然是 `未知聚会`
+- 当前阶段是 `初始准备`
 
-这一步体现：
+这一步体现的论文机制：
 
-- 每个角色有自己的计划
-- 角色不是随机乱动
-- 初始知识状态是不对称的
-- 页面已经直接告诉你“这一步说明什么”
+- `persona`：每个角色都有自己的身份、性格和初始设定
+- `planning`：每个角色一开始就有计划，不是随机移动
+- `memory stream`：每个角色拥有自己的初始记忆
+- `internal state`：三个人知道的信息不同，内部状态不对称
 
-对应论文机制：
+建议讲法：
 
-- planning
-- persistent internal state
-- initial memory difference
+> 这里先看起点状态。Alice 知道晚上有聚会，但 Bob 和 Carol 还不知道。三个角色分布在不同地点，并且每个人都有自己的计划和记忆。这个起点对应论文里的 persona、planning 和 memory stream。
 
-### 第二步：推进到 10:00，展示第一次传播
-
-点击：
-
-- `10:00 第一次传播`
-
-如果你想手动演示，也可以从 `08:00` 连点 `单步推进` 4 次。
-
-你应该看到：
-
-- 时间变成 `10:00`
-- 控制区反馈变成“已切换到 10:00 第一次传播，现在可以开始讲这一步了”
-- 页面会自动把右侧观察对象切到 `Bob`
-- Alice 和 Bob 同时出现在 `霍布斯咖啡馆`
-- 最近关键事件显示 `聚会信息完成一次传播`
-- Bob 开始知道聚会信息
-- 传播链显示 `Alice -> Bob`
-- `当前书签说明` 会明确告诉你这一步证明“对话真实改写了另一个角色的内部状态”
-
-这一步体现：
-
-- 角色按计划移动
-- 相遇后会发生社交传播
-- 对话不仅是文本，还会真的改写记忆和知识状态
-
-对应论文机制：
-
-- plan-driven movement
-- social interaction
-- memory update
-- information propagation
-
-### 第三步：解释记忆检索
-
-停留在 `10:00`，点击 `Bob`。
-
-你应该看到：
-
-- 右侧 `检索到的记忆` 里有和聚会、最近对话有关的记忆
-- 检索得分说明标签会显示为什么这些记忆被选中
-- `最新话语`、`当前为什么这样行动` 会跟刚才的传播事件对应起来
-
-这一步体现：
-
-- Agent 不是把全部记忆一次性拿来用
-- 它会先检索最相关的记忆
-- 当前行为不仅受日程驱动，也受 recalled memory 影响
-
-对应论文机制：
-
-- memory stream
-- retrieval
-- context-conditioned action generation
-
-### 第四步：推进到 14:00，展示第二次传播
+### 第二步：推进到 10:00 第一次传播
 
 点击：
 
-- `14:00 第二次传播`
+- **10:00 第一次传播**
 
-你应该看到：
+看哪里：
 
-- 时间变成 `14:00`
-- 页面会自动把右侧观察对象切到 `Carol`
-- Alice、Bob、Carol 都在 `镇中心广场`
-- 时间线显示 Bob 把聚会信息告诉 Carol
+- 地图上的 `霍布斯咖啡馆`
+- 右侧 **三人状态**
+- 下方 **最近发生的关键事件**
+- 右侧 **传播链**
+
+应该看到：
+
+- 当前时间变成 `10:00`
+- Alice 和 Bob 出现在 `霍布斯咖啡馆`
+- Bob 从 `未知聚会` 变成 `已知聚会`
+- 最近关键事件会出现一次聚会信息传播
+- 传播链出现 `Alice -> Bob`
+- 页面通常会把当前观察对象切到 Bob
+
+这一步体现的论文机制：
+
+- `plan-driven movement`：角色按计划到达咖啡馆
+- `social interaction`：两个角色同处一个地点后发生对话
+- `memory update`：Bob 的记忆和知识状态被改写
+- `information propagation`：信息从 Alice 传播给 Bob
+
+建议讲法：
+
+> 这一刻不是简单显示一句台词，而是一次对话真正改变了 Bob 的内部状态。Bob 原来不知道聚会，现在知道了，并且传播链记录了 Alice 到 Bob 的信息流动。
+
+### 第三步：点击 Bob，解释记忆检索
+
+点击：
+
+- 地图上的 **Bob**
+- 或右侧 **三人状态** 里的 **Bob**
+
+看哪里：
+
+- 右侧 **当前行为**
+- 右侧 **最新话语**
+- 展开 **认知细节（计划、记忆、时间线）**
+- 看 **检索到的记忆**
+- 看 **当前为什么这样行动**
+
+应该看到：
+
+- Bob 的位置是 `霍布斯咖啡馆`
+- Bob 已经知道聚会信息
+- `检索到的记忆` 中会出现与当前位置、计划、Alice 或聚会相关的记忆
+- 记忆旁边会有得分和标签，例如重要性、最近发生、同一地点、相关角色
+- Bob 的行为说明会把计划、地点、附近角色和记忆线索联系起来
+
+这一步体现的论文机制：
+
+- `memory retrieval`：行动前先检索相关记忆
+- `relevance / recency / importance`：检索不是全量读取，而是按相关性、最近性和重要性排序
+- `context-conditioned action generation`：当前行动受计划、地点、附近角色和记忆共同影响
+
+建议讲法：
+
+> Generative Agents 不是把所有记忆一次性塞给模型，而是先从 memory stream 中检索当前最相关的记忆。这里可以看到 Bob 的行为不是孤立生成的，而是由计划、当前位置、附近角色和召回记忆共同决定。
+
+### 第四步：推进到 14:00 第二次传播
+
+点击：
+
+- **14:00 第二次传播**
+
+看哪里：
+
+- 地图上的 `镇中心广场`
+- 右侧 **三人状态**
+- 右侧 **传播链**
+- 下方 **传播进度**
+- 下方 **最近发生的关键事件**
+
+应该看到：
+
+- 当前时间变成 `14:00`
+- Alice、Bob、Carol 出现在 `镇中心广场`
+- Carol 从 `未知聚会` 变成 `已知聚会`
 - 传播链变成：
   - `Alice -> Bob`
   - `Bob -> Carol`
-- Carol 也知道聚会信息
-- `反思数量` 仍然是 `0`
-- `当前书签说明` 会提示你：这一步证明“多个局部互动会累计成全局传播”
+- 传播进度变成 `3/3`
+- 此时 `反思数量` 仍然可以是 `0`，因为系统还没有进入反思形成阶段
 
-这一步体现：
+这一步体现的论文机制：
 
-- 信息可以在多个角色间接力传播
-- 系统模拟的是社会过程，不是一句写死的剧情台词
-- 局部交互会逐步累积成全局状态变化
+- `multi-agent social behavior`：多个角色通过局部相遇形成社会过程
+- `chained propagation`：信息不是广播，而是接力传播
+- `environment-mediated encounters`：地点和时间安排影响谁会遇到谁
 
-对应论文机制：
+建议讲法：
 
-- multi-agent social behavior
-- chained propagation
-- environment-mediated encounters
+> 第二次传播说明系统模拟的是一个社会过程，而不是一句写死的剧情。Bob 在之前从 Alice 那里获得信息，现在又把信息传给 Carol。多个局部互动累计起来，形成了全局传播。
 
-### 第五步：推进到 reflection 形成态
+### 第五步：点击 Carol，确认接收者状态变化
 
 点击：
 
-- `14:30 反思形成态`
+- 地图上的 **Carol**
+- 或右侧 **三人状态** 里的 **Carol**
 
-你应该看到：
+看哪里：
 
+- Carol 的 **当前行为**
+- Carol 的 **最新话语**
+- Carol 的 **近期记忆**
+- Carol 的 **检索到的记忆**
+
+应该看到：
+
+- Carol 已经是 `已知聚会`
+- 她的近期记忆中会有 Bob 告诉她聚会信息的记录
+- 她的当前行为或推理说明会受新获得的信息影响
+
+这一步体现的论文机制：
+
+- `memory write`：对话结果写入接收者的私有记忆
+- `state change`：角色知识状态发生变化
+- `socially grounded behavior`：后续行为会受到刚接收到的信息影响
+
+建议讲法：
+
+> 这里重点看接收者 Carol。她不是只在界面上变了一个标签，而是新增了和 Bob 对话相关的记忆。这个记忆会进入她自己的 memory stream，后续行动可以继续使用。
+
+### 第六步：推进到 14:30 反思形成态
+
+点击：
+
+- **14:30 反思形成态**
+
+看哪里：
+
+- 下方 **反思数量**
+- 右侧 **传播与反思**
+- 右侧 **反思触发依据**
+- 下方 **当前阶段**
+- 右侧 **事件时间线**
+
+应该看到：
+
+- 当前时间变成 `14:30`
 - 当前阶段变成 `反思形成`
-- 页面会自动把右侧观察对象切到 `Alice`
-- 时间线里出现 `高层反思已经形成`
-- 已知情角色会拥有 reflection 条目
-- 当前行为或说明文字会提到共享信息/高层反思
 - `反思数量` 变成 `3`
-- `当前书签说明` 会提示你：这一步证明系统不只存具体记忆，还会做高层总结
+- 三位角色都已经知道聚会
+- 右侧出现 reflection 文本
+- 反思触发依据会说明共享知识已经覆盖所有角色，并且记忆重要性达到阈值
+- 时间线里出现 `高层反思已经形成` 或类似事件
 
-这一步体现：
+这一步体现的论文机制：
 
-- 系统不会停留在单条记忆层面
-- 它会把多个低层事件总结成更高层结论
-- 高层结论还会反过来影响后续行为
+- `reflection`：从多条低层记忆中形成高层总结
+- `higher-level memory abstraction`：系统不只保存事件，还会抽象成社会性认知
+- `long-range behavioral coherence`：高层反思会成为后续计划和行动的上下文
 
-对应论文机制：
+建议讲法：
 
-- reflection
-- higher-level memory abstraction
-- long-range behavioral coherence
+> 反思是论文中很关键的机制。系统不会停在“谁告诉了谁”这种低层事件，而是把多次传播总结成更高层的认知：这场聚会已经从 Alice 的私人信息变成了小镇共享事件。
 
-### 第六步：一句话解释“为什么这叫论文复现”
+### 第七步：点击任意角色，展示“每个人都有自己的认知状态”
 
-答辩时可以直接说：
+点击：
 
-> 这个 demo 复现了论文中的最小完整机制：角色先按计划行动，在环境中自然相遇，检索相关记忆，通过对话传播信息，更新内部状态，最后形成更高层的 reflection。
+- **Alice**
+- **Bob**
+- **Carol** 任意一个角色
 
-### 最短演示路径
+看哪里：
 
-如果时间很紧，可以直接用这条最短路线：
+- 角色身份
+- 当前行为
+- 最新话语
+- 近期记忆
+- 检索到的记忆
+- 反思文本
 
-1. `08:00 初始态`
-2. 解释只有 Alice 知道聚会信息
-3. `10:00 第一次传播`
-4. 展示 `Alice -> Bob`
-5. 点击 Bob，展示记忆检索和推理依据
-6. `14:00 第二次传播`
-7. 展示 `Bob -> Carol`
-8. `14:30 反思形成态`
-9. 展示 `Reflections` 面板
+应该看到：
 
-这条路线最适合 10 分钟视频讲解。
+- 每个角色都有自己的 profile
+- 每个角色都有自己的计划和记忆
+- 每个角色的检索结果不完全相同
+- 每个角色都可以形成 reflection，但 reflection 文本会从自己的记忆角度出发
+
+这一步体现的论文机制：
+
+- `agent identity`：每个 Agent 有稳定身份
+- `private memory stream`：记忆属于单个角色，不是所有人共享一个大文本
+- `individual cognition`：同一事件会进入不同角色的认知上下文
+
+建议讲法：
+
+> 这一步可以说明“每个人物都是一个独立智能体”。他们共享同一个小镇环境，但各自有自己的 persona、计划、记忆和反思。系统把共享世界和私有认知分开处理，这也是复现论文机制时最重要的结构。
+
+### 第八步：用一句话收尾
+
+录屏最后可以直接说：
+
+> 这个 demo 复现的是 Generative Agents 论文中的最小完整闭环：角色先基于 persona 和计划行动，在环境中自然相遇，检索自己的相关记忆，通过对话传播信息，把新信息写回 memory stream，最后从多条低层记忆中形成高层 reflection。
+
+### 10 分钟视频推荐节奏
+
+如果视频控制在 10 分钟左右，可以按这个节奏录：
+
+1. `0:00 - 1:00`：介绍论文目标和系统界面
+2. `1:00 - 2:00`：点击 **08:00 初始态**，讲 persona、planning、memory stream
+3. `2:00 - 3:30`：点击 **10:00 第一次传播**，讲 Alice 到 Bob 的传播
+4. `3:30 - 5:00`：点击 **Bob**，讲记忆检索和当前行为生成
+5. `5:00 - 6:30`：点击 **14:00 第二次传播**，讲 Bob 到 Carol 的接力传播
+6. `6:30 - 7:30`：点击 **Carol**，讲接收者记忆更新
+7. `7:30 - 9:00`：点击 **14:30 反思形成态**，讲 reflection
+8. `9:00 - 10:00`：切换任意角色，总结完整闭环和项目边界
+
+### 录屏时的注意事项
+
+- 主录屏优先使用书签按钮，不要一开始就长时间点 **开始演示**。
+- 如果使用 LLM 模式，点击 **单步推进** 后可能需要等待 `30-90` 秒。
+- 如果右侧出现 `大模型调用失败`，可以解释系统已进入规则兜底；论文机制展示仍然有效。
+- 每到一个关键阶段，建议先点 **暂停演示** 或直接使用书签停住，再讲 20-60 秒。
+- 如果讲乱了，点 **重置场景** 回到 `08:00`，再从书签路线重新开始。
 
 ## 十二、后端接口说明
 
@@ -457,30 +592,38 @@ NEXT_PUBLIC_API_BASE
 
 如果 `backend/.venv` 是老 Python 版本建的，删掉重建即可。
 
-### 5. 3000 或 8000 端口被占用
+### 5. 8000 端口被占用 / 启动报 WinError 10013、10048
 
-停止冲突进程，或者改端口。但改了后端端口后，前端的 `NEXT_PUBLIC_API_BASE` 也要一起改。
+**启动方式没有变**，仍是 `cd backend` 后执行 uvicorn。报错多半是 **8000 已被占用**。
+
+1. 结束占用 8000 的进程（见「九、推荐启动方式 → 启动失败」里的 PowerShell 命令）
+2. 重新启动后端
+3. 或改用 `--port 8001`，并设置 `NEXT_PUBLIC_API_BASE=http://127.0.0.1:8001`
+
+### 6. 3000 端口被占用
+
+Next.js 会自动尝试 **3001**，看 `npm run dev` 输出里的 `Local:` 地址即可。无需改后端。
 
 ## 十六、项目局限性
 
 - 这是课程作业级 demo，不是论文原始系统的全量复现
 - 当前只有 4 个地点和 3 个角色
 - 主线剧情在 `deterministic` 模式下稳定可控，方便录视频和答辩
-- `llm` 模式可以让计划、行动、对话和反思更多由模型生成，但仍会在失败时规则回退
+- `llm` 模式可以让行动、对话和反思更多由模型生成（计划始终硬编码以保证剧情），但仍会在失败时规则回退
 - 反思不再只是固定时间写死触发，而是在传播完成后由记忆重要性阈值触发
 
 ## 十七、可选的大模型模式
 
 当前代码支持 LLM 模式，但需要先说清楚边界：
 
-- LLM 会参与：每日计划生成、当前行动生成、对话生成、reflection 反思生成
+- LLM 会参与：当前行动生成、对话生成、reflection 反思生成（计划始终由程序硬编码，保证 10:00 咖啡馆相遇、14:00 广场传播等剧情节点不被覆盖）
 - 程序仍保证：时间推进、角色相遇、传播链稳定、失败后规则回退
 - 检索仍是规则评分：`importance + recency + relevance + location + social`，不是 embedding 检索
 
 后端支持两种运行模式：
 
 - `SIMULATION_MODE=deterministic`：默认模式，不需要 API key，适合答辩和录屏
-- `SIMULATION_MODE=llm`：启用 OpenAI 兼容接口，让 LLM 参与计划、行动、对话和反思生成
+- `SIMULATION_MODE=llm`：启用 OpenAI 兼容接口，让 LLM 参与行动、对话和反思生成（计划始终硬编码）
 
 这种设计适合答辩：**稳定演示不翻车，LLM 模式体现论文里的 generative cognition。**
 
@@ -492,14 +635,16 @@ NEXT_PUBLIC_API_BASE
 
 ```env
 SIMULATION_MODE=llm
-LLM_API_KEY=你的 DeepSeek API Key
-LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-pro
+DASHSCOPE_API_KEY=你的阿里云百炼 API Key
+LLM_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen3.6-flash
 LLM_TIMEOUT_SECONDS=60
 REFLECTION_IMPORTANCE_THRESHOLD=2.4
 LLM_DEBUG_LOG=true
 LLM_LOG_FILE=backend/logs/llm_debug.log
 ```
+
+也可以继续使用通用变量名 `LLM_API_KEY`；如果两个变量都设置，优先使用 `LLM_API_KEY`。当前默认供应商是阿里云百炼，默认模型是 `qwen3.6-flash`，默认 OpenAI 兼容地址是 `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`。
 
 然后直接启动后端即可：
 
@@ -516,9 +661,9 @@ Windows PowerShell：
 cd E:\demo\buaa\suanfa\three\backend
 
 $env:SIMULATION_MODE="llm"
-$env:LLM_API_KEY="你的 DeepSeek API Key"
-$env:LLM_BASE_URL="https://api.deepseek.com"
-$env:LLM_MODEL="deepseek-v4-pro"
+$env:DASHSCOPE_API_KEY="你的阿里云百炼 API Key"
+$env:LLM_BASE_URL="https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+$env:LLM_MODEL="qwen3.6-flash"
 $env:LLM_TIMEOUT_SECONDS="60"
 $env:REFLECTION_IMPORTANCE_THRESHOLD="2.4"
 $env:LLM_DEBUG_LOG="true"
@@ -533,9 +678,9 @@ Windows cmd：
 cd E:\demo\buaa\suanfa\three\backend
 
 set SIMULATION_MODE=llm
-set LLM_API_KEY=your_deepseek_key
-set LLM_BASE_URL=https://api.deepseek.com
-set LLM_MODEL=deepseek-v4-pro
+set DASHSCOPE_API_KEY=your_bailian_key
+set LLM_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+set LLM_MODEL=qwen3.6-flash
 set LLM_TIMEOUT_SECONDS=60
 set REFLECTION_IMPORTANCE_THRESHOLD=2.4
 set LLM_DEBUG_LOG=true
@@ -553,13 +698,17 @@ $env:NEXT_PUBLIC_API_BASE="http://127.0.0.1:8000"
 npm run dev
 ```
 
-如果使用中转或其他 OpenAI 兼容接口，把 `LLM_BASE_URL` 改成服务商要求的 base URL，`LLM_MODEL` 改成服务商支持的模型名即可。有的服务商 base URL 带 `/v1`，DeepSeek 官方地址不带 `/v1`。代码会请求 `{LLM_BASE_URL}/chat/completions`，也就是 DeepSeek 官方文档里的 `POST https://api.deepseek.com/chat/completions`。
+阿里云百炼的 OpenAI 兼容接口会请求 `{LLM_BASE_URL}/chat/completions`，所以上面的配置实际调用 `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions`。如使用海外地域或其他百炼 endpoint，按百炼控制台/文档替换 `LLM_BASE_URL` 即可。
 
-`LLM_TIMEOUT_SECONDS` 默认是 `60`。DeepSeek 这类大模型如果首次响应慢，建议先保持 `60`，不要用很短的超时时间。
+如果使用中转或其他 OpenAI 兼容接口，把 `LLM_BASE_URL` 改成服务商要求的 base URL，`LLM_MODEL` 改成服务商支持的模型名即可。代码仍然请求 `{LLM_BASE_URL}/chat/completions`。
+
+`LLM_TIMEOUT_SECONDS` 默认是 `60`。百炼/Qwen 这类大模型如果首次响应慢，建议先保持 `60`，不要用很短的超时时间。
 
 `REFLECTION_IMPORTANCE_THRESHOLD` 默认是 `2.4`，表示共享信息传播完成后，角色记忆重要性累计到阈值才形成 reflection。
 
-如果不配置 `SIMULATION_MODE=llm`，系统会使用 deterministic 规则演示模式；如果选择 `llm` 但没有 `LLM_API_KEY` 或接口失败，系统会自动规则回退并继续运行。界面右侧会显示当前模式、LLM 最近状态、记忆流条数和 reflection 触发原因。
+如果不配置 `SIMULATION_MODE=llm`，系统会使用 deterministic 规则演示模式；如果选择 `llm` 但没有 `LLM_API_KEY` / `DASHSCOPE_API_KEY` 或接口失败，系统会自动规则回退并继续运行。界面右侧会显示当前模式、LLM 最近状态、记忆流条数和 reflection 触发原因。
+
+在机制上，可以把每个角色理解成一个“由同一个百炼模型扮演、但上下文相互隔离”的 LLM Agent：`profile_summary`、`personality`、`role` 是人物设定，`memory_bank`、`recent_memories`、`reflections` 是私有记忆流，`active_plan`、当前位置和附近角色是当前感知，`retrieved_memories` 是行动前召回的上下文。LLM 只返回结构化 JSON；时间推进、位置移动、相遇检测、传播链和反思触发仍由程序护栏负责。
 
 ### LLM 调用日志和定位方式
 
@@ -584,7 +733,7 @@ $env:HTTP_PROXY="http://127.0.0.1:7897"
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/api/state |
-  Select-Object simulation_mode,llm_enabled,llm_model,last_llm_call_status
+  Select-Object simulation_mode,llm_enabled,llm_provider,llm_model,last_llm_call_status
 ```
 
 LLM 调用成功时应看到：
@@ -592,7 +741,8 @@ LLM 调用成功时应看到：
 ```text
 simulation_mode      llm
 llm_enabled          True
-llm_model            deepseek-v4-pro
+llm_provider         aliyun-bailian
+llm_model            qwen3.6-flash
 last_llm_call_status ok
 ```
 
@@ -626,12 +776,12 @@ last_llm_call_status ok
 
 答辩时可以这样概括：
 
-> 我们提供 deterministic 和 LLM 两种模式。deterministic 模式用于稳定演示，LLM 模式则让大模型参与计划、行动、对话和反思生成。时间推进和相遇关系仍由程序保证稳定，这样能避免现场 API 波动导致演示失败；但角色说什么、怎么行动、如何总结反思，会优先由 LLM 根据 persona、计划、地点、附近角色和检索记忆生成，因此更接近论文中的 generative agent cognition。
+> 我们提供 deterministic 和 LLM 两种模式。deterministic 模式用于稳定演示，LLM 模式则让大模型参与行动、对话和反思生成。角色计划始终由程序硬编码，保证 10:00 咖啡馆相遇、14:00 广场传播等关键剧情节点不被覆盖。时间推进和相遇关系仍由程序保证稳定，这样能避免现场 API 波动导致演示失败；但角色说什么、怎么行动、如何总结反思，会优先由 LLM 根据 persona、计划、地点、附近角色和检索记忆生成，因此更接近论文中的 generative agent cognition。
 
 ### LLM 模式检查与异常
 
 - 如果右侧显示 `规则模式未调用 LLM`：说明没有设置 `SIMULATION_MODE=llm`，或后端没有重启。
-- 如果右侧显示 `LLM 模式缺少 API Key`：说明 `LLM_API_KEY` 为空。
+- 如果右侧显示 `LLM 模式缺少 API Key`：说明 `LLM_API_KEY` 和 `DASHSCOPE_API_KEY` 都为空。
 - 如果右侧显示 `LLM 调用失败，已规则回退`：说明 key、base url、网络、模型名或代理有问题，但演示仍会继续。
 - 如果使用代理，建议确保启动后端的 PowerShell 能访问 LLM 接口；必要时设置 `HTTPS_PROXY` / `HTTP_PROXY`。
 - 如果只是课程答辩，推荐先用 deterministic 录一版保底，再用 LLM 模式现场展示“模型参与生成”的差异。

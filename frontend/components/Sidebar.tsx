@@ -100,7 +100,7 @@ export function Sidebar({
             <strong>{memoryStreamCount}</strong>
           </div>
           <div>
-            <span className="status-key">LLM</span>
+            <span className="status-key">大模型</span>
             <strong>{formatLlmStatus(lastLlmCallStatus)}</strong>
           </div>
         </div>

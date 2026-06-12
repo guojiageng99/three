@@ -11,6 +11,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 .playwright-cli/
+backend/logs/
+*.backup.pptx
 
 # Local media and generated deliverables
 1.mp4

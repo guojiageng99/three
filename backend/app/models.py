@@ -98,6 +98,7 @@ class WorldState(BaseModel):
     tick_count: int
     simulation_mode: str = "deterministic"
     llm_enabled: bool
+    llm_provider: str | None = None
     llm_model: str | None = None
     last_llm_call_status: str = "disabled"
     reflection_trigger_reason: str | None = None

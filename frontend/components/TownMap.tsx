@@ -47,11 +47,11 @@ export function TownMap({ agents, locations, selectedAgentId, onSelectAgent, pha
       <div className="map-grid">
         {locations.map((location) => {
           const occupants = agentsByLocation.get(location.id) ?? [];
+          const hasSelectedAgent = occupants.some((a) => a.id === selectedAgentId);
           return (
             <div
               key={location.id}
-                className="location-tile"
-                style={{ left: `${location.x}%`, top: `${location.y}%` }}
+                className={`location-tile${hasSelectedAgent ? " location-tile-selected" : ""}`}
             >
               <div className="location-topline">
                 <div className="location-name">{formatLocationName(location.name)}</div>

@@ -18,6 +18,7 @@ type ControlsProps = {
   snapshotExists: boolean;
   activeBookmarkKey: string | null;
   actionFeedback: string | null;
+  isActionPending: boolean;
   currentStepGuide: {
     label: string;
     focusAgent: string;
@@ -44,23 +45,24 @@ export function Controls({
   snapshotExists,
   activeBookmarkKey,
   actionFeedback,
+  isActionPending,
 }: ControlsProps) {
   return (
     <div className="control-stack">
       <div className="controls">
-        <button type="button" className="primary" onClick={running ? onPause : onStart}>
+        <button type="button" className="primary" onClick={running ? onPause : onStart} disabled={isActionPending}>
           {running ? "暂停演示" : "开始演示"}
         </button>
-        <button type="button" className="primary secondary-action" onClick={onTick}>
-          单步推进
+        <button type="button" className="primary secondary-action" onClick={onTick} disabled={isActionPending}>
+          {isActionPending ? "推进中…" : "单步推进"}
         </button>
-        <button type="button" onClick={onReset}>
+        <button type="button" onClick={onReset} disabled={isActionPending}>
           重置场景
         </button>
-        <button type="button" onClick={onSaveSnapshot}>
+        <button type="button" onClick={onSaveSnapshot} disabled={isActionPending}>
           保存快照
         </button>
-        <button type="button" onClick={onLoadSnapshot} disabled={!snapshotExists}>
+        <button type="button" onClick={onLoadSnapshot} disabled={isActionPending || !snapshotExists}>
           恢复快照
         </button>
       </div>
@@ -72,6 +74,7 @@ export function Controls({
             className={bookmark.key === activeBookmarkKey ? "bookmark-chip active" : "bookmark-chip"}
             onClick={() => onJumpToBookmark(bookmark.key)}
             title={bookmark.description}
+            disabled={isActionPending}
           >
             {bookmark.label}
           </button>
@@ -84,6 +87,7 @@ export function Controls({
             type="button"
             className={speedLabel === activeSpeedLabel ? "speed-chip active" : "speed-chip"}
             onClick={() => onSetSpeed(speedLabel)}
+            disabled={isActionPending}
           >
             {speedLabel}
           </button>

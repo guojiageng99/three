@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
+from .cognition import LlmGenerationError
 from .simulation import engine
 
 app = FastAPI(title="Generative Agents Demo API")
@@ -37,6 +38,16 @@ app.add_middleware(
 )
 
 
+def _handle_llm_errors(action) -> dict:
+    try:
+        return action()
+    except LlmGenerationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"status": exc.status, "message": exc.message},
+        ) from exc
+
+
 @app.on_event("shutdown")
 def on_shutdown() -> None:
     engine.shutdown()
@@ -61,14 +72,20 @@ def pause_simulation() -> dict:
 
 @app.post("/api/sim/tick")
 def tick_simulation() -> dict:
-    engine.tick()
-    return {"ok": True, "tick_count": engine.snapshot().tick_count}
+    def run() -> dict:
+        engine.tick()
+        return {"ok": True, "tick_count": engine.snapshot().tick_count}
+
+    return _handle_llm_errors(run)
 
 
 @app.post("/api/sim/reset")
 def reset_simulation() -> dict:
-    engine.reset()
-    return {"ok": True}
+    def run() -> dict:
+        engine.reset()
+        return {"ok": True}
+
+    return _handle_llm_errors(run)
 
 
 @app.post("/api/sim/speed")
@@ -102,11 +119,14 @@ def load_simulation_snapshot() -> dict:
 
 @app.post("/api/sim/bookmark")
 def jump_to_bookmark(payload: BookmarkRequest) -> dict:
-    bookmark = engine.jump_to_bookmark(payload.bookmark_key)
-    return {
-        "ok": True,
-        "bookmark": bookmark.model_dump(),
-    }
+    def run() -> dict:
+        bookmark = engine.jump_to_bookmark(payload.bookmark_key)
+        return {
+            "ok": True,
+            "bookmark": bookmark.model_dump(),
+        }
+
+    return _handle_llm_errors(run)
 
 
 @app.websocket("/ws/state")

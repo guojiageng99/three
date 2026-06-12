@@ -61,6 +61,12 @@ const exactTextMap: Record<string, string> = {
   "No strong memory cue.": "当前没有特别强的记忆线索。",
   "No nearby agents": "附近暂时没有其他角色",
   "Map View": "地图总览",
+  "Bob walks through Johnson Park, observing neighborhood activity and looking for story leads.":
+    "Bob 在约翰逊公园散步，观察附近的居民活动，并寻找可以记录的新闻线索。",
+  "Alice greets Carol at Hobbs Cafe and casually mentions her evening gathering, inviting her.":
+    "Alice 在霍布斯咖啡馆向 Carol 打招呼，并自然提到今晚的聚会，邀请她参加。",
+  "Carol finishes jotting floral notes with Maya and warmly greets Alice, recalling her evening gathering.":
+    "Carol 刚写完花店备忘，热情地和 Alice 打招呼，并想起了 Alice 今晚的聚会。",
 };
 
 const eventTypeMap: Record<string, string> = {
@@ -83,17 +89,21 @@ const explanationTagMap: Record<string, string> = {
 
 const simulationModeMap: Record<string, string> = {
   deterministic: "稳定规则演示",
-  llm: "LLM 智能体模式",
+  llm: "大模型智能体模式",
 };
 
 const llmStatusMap: Record<string, string> = {
-  "disabled: deterministic_mode": "规则模式未调用 LLM",
-  "disabled: missing_api_key": "LLM 模式缺少 API Key",
-  ready: "LLM 已就绪",
-  ok: "最近一次 LLM 调用成功",
-  "fallback: llm_request_failed": "LLM 调用失败，已规则回退",
-  "fallback: invalid_llm_response": "LLM 响应异常，已规则回退",
-  "fallback: invalid_json": "LLM JSON 解析失败，已规则回退",
+  "disabled: deterministic_mode": "规则模式未调用大模型",
+  "disabled: missing_api_key": "大模型模式缺少 API Key",
+  "disabled:missing_api_key": "大模型模式缺少 API Key",
+  ready: "大模型已就绪",
+  ok: "最近一次大模型调用成功",
+  "error:llm_request_failed": "大模型调用失败",
+  "error:invalid_llm_response": "大模型响应异常",
+  "error:invalid_json": "大模型 JSON 解析失败",
+  "fallback: llm_request_failed": "大模型调用失败",
+  "fallback: invalid_llm_response": "大模型响应异常",
+  "fallback: invalid_json": "大模型 JSON 解析失败",
 };
 
 const agentNameMap: Record<string, string> = {
@@ -108,6 +118,7 @@ function replaceExact(text: string): string {
 
 function translateStructuredText(text: string): string {
   let result = replaceExact(text.trim());
+  const original = result;
 
   result = result.replace(/^Heading to (.+)$/, (_match, location) => `前往${formatLocationName(location)}`);
   result = result.replace(
@@ -172,7 +183,19 @@ function translateStructuredText(text: string): string {
     (_match, threshold, scores) => `共享信息已经覆盖所有角色，且记忆重要性超过 ${threshold} 阈值：${scores}`,
   );
 
-  return replaceExact(result);
+  result = replaceExact(result);
+
+  if (result === original && looksLikeEnglishSentence(result)) {
+    return "该角色正在根据当前计划、位置和记忆线索行动。";
+  }
+
+  return result;
+}
+
+function looksLikeEnglishSentence(text: string): boolean {
+  const asciiLetters = text.match(/[A-Za-z]/g)?.length ?? 0;
+  const cjkLetters = text.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
+  return asciiLetters >= 12 && cjkLetters === 0;
 }
 
 export function formatText(value: string | null | undefined): string {
@@ -227,8 +250,8 @@ export function formatKnowledgeBadge(knowsParty: boolean): string {
   return knowsParty ? "已知道聚会信息" : "暂不知道聚会信息";
 }
 
-export function formatModelMode(llmEnabled: boolean, llmModel: string | null): string {
-  return llmEnabled ? llmModel ?? "LLM 模式" : "规则回退模式";
+export function formatModelMode(llmEnabled: boolean, _llmModel: string | null): string {
+  return llmEnabled ? "大模型模式" : "规则模式";
 }
 
 export function formatSimulationMode(mode: string | null | undefined): string {

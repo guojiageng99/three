@@ -92,6 +92,7 @@ export type WorldState = {
   tick_count: number;
   simulation_mode: string;
   llm_enabled: boolean;
+  llm_provider: string | null;
   llm_model: string | null;
   last_llm_call_status: string;
   reflection_trigger_reason: string | null;

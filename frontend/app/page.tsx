@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Controls } from "@/components/Controls";
 import { Sidebar } from "@/components/Sidebar";
 import { TownMap } from "@/components/TownMap";
 import {
+  ApiRequestError,
   getSimulationState,
   jumpToSimulationBookmark,
   loadSimulationSnapshot,
@@ -88,51 +89,51 @@ export default function HomePage() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState("connecting");
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [isActionPending, setIsActionPending] = useState(false);
   const [activeBookmarkKey, setActiveBookmarkKey] = useState<string | null>(null);
   const didAutoPrepare = useRef(false);
   const pendingBookmarkKey = useRef<string | null>(null);
 
+  const applyWorldState = useCallback((payload: WorldState) => {
+    setWorld(payload);
+    const inferredBookmarkKey = inferActiveBookmarkKey(payload);
+    setActiveBookmarkKey(inferredBookmarkKey);
+    setSelectedAgentId((current) => {
+      const pendingBookmark = pendingBookmarkKey.current;
+      if (pendingBookmark) {
+        return recommendedAgentIdForWorld(payload, pendingBookmark) ?? current ?? payload.agents[0]?.id ?? null;
+      }
+      return current ?? recommendedAgentIdForWorld(payload, inferredBookmarkKey) ?? payload.agents[0]?.id ?? null;
+    });
+    if (pendingBookmarkKey.current && inferredBookmarkKey === pendingBookmarkKey.current) {
+      const matchedBookmark = payload.available_bookmarks.find((item) => item.key === pendingBookmarkKey.current);
+      setActionFeedback(`已切换到 ${matchedBookmark?.label ?? "当前阶段"}，现在可以开始讲这一步了。`);
+      pendingBookmarkKey.current = null;
+    }
+    if (!didAutoPrepare.current) {
+      didAutoPrepare.current = true;
+      if (needsFirstTimeReset(payload)) {
+        setActionFeedback("页面已自动准备到 08:00 初始态，第一次看建议从这里开始。");
+        setActiveBookmarkKey(INITIAL_BOOKMARK_KEY);
+        pendingBookmarkKey.current = INITIAL_BOOKMARK_KEY;
+        void jumpToSimulationBookmark(INITIAL_BOOKMARK_KEY).catch(() => {
+          pendingBookmarkKey.current = null;
+          setActionFeedback("自动切回 08:00 失败了，你也可以手动点击“08:00 初始态”。");
+        });
+      } else {
+        setActionFeedback("当前已经是最适合第一次观看的初始态，可以直接开始。");
+      }
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
-    const applyWorldState = (payload: WorldState) => {
-      if (!isMounted) {
-        return;
-      }
-      setWorld(payload);
-      const inferredBookmarkKey = inferActiveBookmarkKey(payload);
-      setActiveBookmarkKey(inferredBookmarkKey);
-      setSelectedAgentId((current) => {
-        const pendingBookmark = pendingBookmarkKey.current;
-        if (pendingBookmark) {
-          return recommendedAgentIdForWorld(payload, pendingBookmark) ?? current ?? payload.agents[0]?.id ?? null;
-        }
-        return current ?? recommendedAgentIdForWorld(payload, inferredBookmarkKey) ?? payload.agents[0]?.id ?? null;
-      });
-      if (pendingBookmarkKey.current && inferredBookmarkKey === pendingBookmarkKey.current) {
-        const matchedBookmark = payload.available_bookmarks.find((item) => item.key === pendingBookmarkKey.current);
-        setActionFeedback(`已切换到 ${matchedBookmark?.label ?? "当前阶段"}，现在可以开始讲这一步了。`);
-        pendingBookmarkKey.current = null;
-      }
-      if (!didAutoPrepare.current) {
-        didAutoPrepare.current = true;
-        if (needsFirstTimeReset(payload)) {
-          setActionFeedback("页面已自动准备到 08:00 初始态，第一次看建议从这里开始。");
-          setActiveBookmarkKey(INITIAL_BOOKMARK_KEY);
-          pendingBookmarkKey.current = INITIAL_BOOKMARK_KEY;
-          void jumpToSimulationBookmark(INITIAL_BOOKMARK_KEY).catch(() => {
-            pendingBookmarkKey.current = null;
-            setActionFeedback("自动切回 08:00 失败了，你也可以手动点击“08:00 初始态”。");
-          });
-        } else {
-          setActionFeedback("当前已经是最适合第一次观看的初始态，可以直接开始。");
-        }
-      }
-    };
-
     void getSimulationState()
       .then((payload) => {
-        applyWorldState(payload);
+        if (isMounted) {
+          applyWorldState(payload);
+        }
       })
       .catch(() => {
         if (isMounted) {
@@ -145,13 +146,15 @@ export default function HomePage() {
     socket.onclose = () => setConnectionState("disconnected");
     socket.onerror = () => setConnectionState("error");
     socket.onmessage = (event) => {
-      applyWorldState(JSON.parse(event.data) as WorldState);
+      if (isMounted) {
+        applyWorldState(JSON.parse(event.data) as WorldState);
+      }
     };
     return () => {
       isMounted = false;
       socket.close();
     };
-  }, []);
+  }, [applyWorldState]);
 
   const selectedAgent = useMemo(() => {
     if (!world || !selectedAgentId) {
@@ -302,6 +305,7 @@ export default function HomePage() {
   }, [demoPhase]);
 
   const runAction = async (pendingMessage: string, action: () => Promise<void>, bookmarkKey?: string) => {
+    setIsActionPending(true);
     setActionFeedback(pendingMessage);
     if (bookmarkKey) {
       pendingBookmarkKey.current = bookmarkKey;
@@ -310,11 +314,25 @@ export default function HomePage() {
     }
     try {
       await action();
-    } catch {
+      const payload = await getSimulationState();
+      applyWorldState(payload);
+    } catch (error) {
       pendingBookmarkKey.current = null;
-      setActionFeedback("操作没有成功，请确认前后端仍然在运行。");
+      if (error instanceof ApiRequestError) {
+        const statusHint = error.detailStatus ? `（${error.detailStatus}）` : "";
+        setActionFeedback(`大模型调用失败：${error.message}${statusHint}`);
+      } else {
+        setActionFeedback("操作没有成功，请确认前后端仍然在运行。");
+      }
+    } finally {
+      setIsActionPending(false);
     }
   };
+
+  const tickPendingMessage =
+    world?.simulation_mode === "llm"
+      ? "大模型生成中，单步约需 30–90 秒，请稍候…"
+      : "已请求单步推进，通常一秒内会看到状态更新。";
 
   return (
     <main className="shell">
@@ -365,7 +383,7 @@ export default function HomePage() {
                 running={world.running}
                 onStart={() => void runAction("开始自动演示中，出现关键事件后记得暂停。", () => postAction("/api/sim/start"))}
                 onPause={() => void runAction("已暂停，适合现在开始讲解。", () => postAction("/api/sim/pause"))}
-                onTick={() => void runAction("已请求单步推进，通常一秒内会看到状态更新。", () => postAction("/api/sim/tick"))}
+                onTick={() => void runAction(tickPendingMessage, () => postAction("/api/sim/tick"))}
                 onReset={() =>
                   void runAction("已重置到起点，建议先看 Alice 与 Bob 的第一次相遇。", () => postAction("/api/sim/reset"), INITIAL_BOOKMARK_KEY)
                 }
@@ -387,6 +405,7 @@ export default function HomePage() {
                 snapshotExists={world.snapshot_status.exists}
                 activeBookmarkKey={activeBookmarkKey}
                 actionFeedback={actionFeedback}
+                isActionPending={isActionPending}
                 currentStepGuide={currentStepGuide}
               />
             </section>

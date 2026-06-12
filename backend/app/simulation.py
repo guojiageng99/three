@@ -5,12 +5,13 @@ import os
 import threading
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from .cognition import AgentCognition
+from .cognition import ActionDecision, AgentCognition, DialogueDecision
 from .models import Agent, DemoBookmark, EventLog, KnowledgeEdge, Location, MemoryEntry, PlanItem, SnapshotStatus, WorldState
 
 
@@ -32,6 +33,7 @@ class SimulationEngine:
         self._snapshot_bundle: dict | None = None
         self._bookmarks = self._build_bookmarks()
         self._cognition = AgentCognition(self.simulation_mode)
+        self._jumping = False
         self.reset()
 
     def reset(self) -> None:
@@ -51,7 +53,18 @@ class SimulationEngine:
             self.reflection_trigger_reason: str | None = None
             self.shared_pairs: set[tuple[str, str]] = set()
             self._refresh_recent_memories()
-            self._ensure_plans()
+            day_label = self.current_time.strftime("%Y-%m-%d")
+            time_label = self.current_time.strftime("%H:%M")
+            agents_snapshot = deepcopy(self.agents)
+            locations_snapshot = deepcopy(self.locations)
+
+        plan_updates = self._generate_plans_outside_lock(agents_snapshot, locations_snapshot, day_label)
+
+        with self._lock:
+            for agent in self.agents:
+                if agent.id in plan_updates:
+                    agent.plan = plan_updates[agent.id]
+                agent.active_plan = self._active_plan_item(agent, time_label)
             self._seed_opening_event()
 
     def start(self) -> None:
@@ -124,12 +137,20 @@ class SimulationEngine:
         if bookmark is None:
             raise ValueError(f"Unsupported bookmark: {bookmark_key}")
 
-        self.reset()
-        while self.current_time.strftime("%H:%M") < bookmark.target_time:
-            self.tick()
+        self._jumping = True
+        try:
+            current = self.current_time.strftime("%H:%M")
+            if current >= bookmark.target_time:
+                self.reset()
+            while self.current_time.strftime("%H:%M") < bookmark.target_time:
+                self.tick()
+                time.sleep(0.5)
+        finally:
+            self._jumping = False
 
         with self._lock:
             self.running = False
+            self._prune_events_for_bookmark(bookmark.target_time)
         return bookmark
 
     def export_evidence(self) -> dict:
@@ -146,6 +167,8 @@ class SimulationEngine:
             "tick_count": snapshot.tick_count,
             "phase_label": self._phase_label(snapshot),
             "simulation_mode": snapshot.simulation_mode,
+            "llm_provider": snapshot.llm_provider,
+            "llm_model": snapshot.llm_model,
             "llm_status": snapshot.last_llm_call_status,
             "memory_stream_count": snapshot.memory_stream_count,
             "reflection_trigger_reason": snapshot.reflection_trigger_reason,
@@ -158,6 +181,7 @@ class SimulationEngine:
                 "Dialogue spread is recorded in the event timeline and propagation chain.",
                 "Retrieved memories explain why an agent acts in the current context.",
                 "Reflection appears after social knowledge spreads and memory importance crosses the threshold.",
+                "In LLM mode, each character is prompted as an independent agent with its own profile and private memories.",
             ],
         }
 
@@ -174,6 +198,9 @@ class SimulationEngine:
         return json_path, md_path
 
     def tick(self) -> None:
+        pending_actions: list[dict] = []
+        pending_interactions: list[dict] = []
+
         with self._lock:
             self.current_time += timedelta(minutes=30)
             self.tick_count += 1
@@ -212,29 +239,67 @@ class SimulationEngine:
                     nearby_agents=nearby_agents,
                     time_label=time_label,
                 )
-                agent.retrieved_memories = retrieved
-                agent.retrieval_explanations = retrieval_explanations
-                decision = self._cognition.generate_action(
-                    agent=agent,
-                    active_plan=active_item,
-                    current_location=self._location(agent.current_location_id),
-                    nearby_agents=nearby_agents,
-                    retrieved_memories=retrieved,
-                    time_label=time_label,
-                )
-                agent.current_action = decision.summary
-                agent.last_utterance = decision.utterance
-                agent.reasoning_note = decision.reasoning_note
-                self._remember(
-                    agent,
-                    "action",
-                    f"I chose this action: {decision.summary}.",
-                    agent.current_location_id,
-                    0.22,
-                    [other.id for other in nearby_agents],
+                pending_actions.append(
+                    {
+                        "agent_id": agent.id,
+                        "agent": deepcopy(agent),
+                        "active_plan": deepcopy(active_item),
+                        "location": deepcopy(self._location(agent.current_location_id)),
+                        "nearby_agents": deepcopy(nearby_agents),
+                        "retrieved_memories": deepcopy(retrieved),
+                        "retrieval_explanations": deepcopy(retrieval_explanations),
+                        "time_label": time_label,
+                    }
                 )
 
-            self._run_storyline(time_label)
+            pending_interactions = self._collect_pending_interactions(time_label)
+
+        def _generate_action(item: dict) -> dict:
+            return {
+                **item,
+                "decision": self._cognition.generate_action(
+                    agent=item["agent"],
+                    active_plan=item["active_plan"],
+                    current_location=item["location"],
+                    nearby_agents=item["nearby_agents"],
+                    retrieved_memories=item["retrieved_memories"],
+                    time_label=item["time_label"],
+                ),
+            }
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            action_results = list(pool.map(_generate_action, pending_actions))
+            interaction_results = list(pool.map(self._generate_dialogue_outside_lock, pending_interactions))
+
+        reflection_payload: tuple[str | None, list[dict]] | None = None
+        with self._lock:
+            for item in action_results:
+                self._apply_action_result(item)
+
+            for item in interaction_results:
+                self._apply_dialogue_result(item)
+
+            if self._party_knowers_count() >= 3 and self.story_flags["party_shared_tick_count"] is None:
+                self.story_flags["party_shared_tick_count"] = self.tick_count
+
+            reflection_payload = self._prepare_reflection_payload(time_label)
+
+        reflection_results: list[dict] = []
+        reflection_reason: str | None = None
+        if reflection_payload is not None:
+            reflection_reason, reflection_agents = reflection_payload
+            reflection_results = [
+                {
+                    "agent_id": item["agent_id"],
+                    "text": self._cognition.generate_reflection(item["agent"], time_label),
+                }
+                for item in reflection_agents
+            ]
+
+        with self._lock:
+            if reflection_results and reflection_reason:
+                self.reflection_trigger_reason = reflection_reason
+                self._apply_reflection_results(reflection_results, time_label)
             self._trim_logs()
 
     def snapshot(self) -> WorldState:
@@ -246,6 +311,7 @@ class SimulationEngine:
                 tick_count=self.tick_count,
                 simulation_mode=self.simulation_mode,
                 llm_enabled=self._cognition.enabled,
+                llm_provider=self._cognition.provider if self._cognition.enabled else None,
                 llm_model=self._cognition.model if self._cognition.enabled else None,
                 last_llm_call_status=self._cognition.last_llm_call_status,
                 reflection_trigger_reason=self.reflection_trigger_reason,
@@ -383,34 +449,165 @@ class SimulationEngine:
             location_id="home_alice",
         )
 
-    def _run_storyline(self, time_label: str) -> None:
+    def _agent_by_id(self, agent_id: str) -> Agent:
+        return next(agent for agent in self.agents if agent.id == agent_id)
+
+    def _generate_plans_outside_lock(
+        self,
+        agents: list[Agent],
+        locations: list[Location],
+        day_label: str,
+    ) -> dict[str, list[PlanItem]]:
+        plan_updates: dict[str, list[PlanItem]] = {}
+        for agent in agents:
+            generated = self._cognition.generate_plan(agent, locations, day_label)
+            if generated:
+                plan_updates[agent.id] = generated
+        return plan_updates
+
+    def _apply_action_result(self, item: dict) -> None:
+        agent = self._agent_by_id(item["agent_id"])
+        decision: ActionDecision = item["decision"]
+        nearby_agents = [
+            other
+            for other in self.agents
+            if other.id != agent.id and other.current_location_id == agent.current_location_id
+        ]
+        agent.retrieved_memories = item["retrieved_memories"]
+        agent.retrieval_explanations = item["retrieval_explanations"]
+        agent.current_action = decision.summary
+        agent.last_utterance = decision.utterance
+        agent.reasoning_note = decision.reasoning_note
+        self._remember(
+            agent,
+            "action",
+            f"I chose this action: {decision.summary}.",
+            agent.current_location_id,
+            0.22,
+            [other.id for other in nearby_agents],
+        )
+
+    def _collect_pending_interactions(self, time_label: str) -> list[dict]:
         encounters: dict[str, list[Agent]] = defaultdict(list)
         for agent in self.agents:
             encounters[agent.current_location_id].append(agent)
 
+        pending: list[dict] = []
         for location_id, occupants in encounters.items():
             if len(occupants) < 2:
                 continue
             knowers = [agent for agent in occupants if agent.knows_party]
             listeners = [agent for agent in occupants if not agent.knows_party]
-            if listeners and knowers:
-                for listener in listeners:
-                    preferred_speaker = next((agent for agent in knowers if agent.id != "alice"), knowers[0])
-                    self._handle_pair_interaction(preferred_speaker, listener, self._location(location_id), time_label)
+            if not listeners or not knowers:
+                continue
+            location = self._location(location_id)
+            for listener in listeners:
+                preferred_speaker = next((agent for agent in knowers if agent.id != "alice"), knowers[0])
+                speaker, other = (preferred_speaker, listener)
+                if not speaker.knows_party:
+                    speaker, other = other, speaker
+                pair_key = tuple(sorted([speaker.id, other.id]))
+                if pair_key in self.shared_pairs:
+                    continue
+                pending.append(
+                    {
+                        "speaker_id": speaker.id,
+                        "listener_id": other.id,
+                        "speaker": deepcopy(speaker),
+                        "listener": deepcopy(other),
+                        "location": deepcopy(location),
+                        "time_label": time_label,
+                        "pair_key": pair_key,
+                    }
+                )
+        return pending
 
-        if self._party_knowers_count() >= 3 and self.story_flags["party_shared_tick_count"] is None:
-            self.story_flags["party_shared_tick_count"] = self.tick_count
+    def _generate_dialogue_outside_lock(self, item: dict) -> dict:
+        speaker_retrieved, speaker_explanations = self._cognition.retrieve_memories_with_explanations(
+            agent=item["speaker"],
+            active_plan=self._active_plan_item(item["speaker"], item["time_label"]),
+            current_location=item["location"],
+            nearby_agents=[item["listener"]],
+            time_label=item["time_label"],
+        )
+        decision = self._cognition.generate_dialogue(
+            speaker=item["speaker"],
+            listener=item["listener"],
+            current_location=item["location"],
+            retrieved_memories=speaker_retrieved,
+            time_label=item["time_label"],
+        )
+        listener_retrieved, listener_explanations = self._cognition.retrieve_memories_with_explanations(
+            agent=item["listener"],
+            active_plan=self._active_plan_item(item["listener"], item["time_label"]),
+            current_location=item["location"],
+            nearby_agents=[item["speaker"]],
+            time_label=item["time_label"],
+        )
+        return {
+            **item,
+            "decision": decision,
+            "speaker_retrieved": speaker_retrieved,
+            "speaker_explanations": speaker_explanations,
+            "listener_retrieved": listener_retrieved,
+            "listener_explanations": listener_explanations,
+        }
 
-        self._maybe_generate_reflections(time_label)
+    def _apply_dialogue_result(self, item: dict) -> None:
+        if item["pair_key"] in self.shared_pairs:
+            return
 
-    def _maybe_generate_reflections(self, time_label: str) -> None:
+        speaker = self._agent_by_id(item["speaker_id"])
+        listener = self._agent_by_id(item["listener_id"])
+        if speaker.knows_party == listener.knows_party:
+            return
+
+        decision: DialogueDecision = item["decision"]
+        self.shared_pairs.add(item["pair_key"])
+        listener_learned_now = decision.listener_learns_party and listener.id not in self.knowledge_status
+        listener.knows_party = decision.listener_learns_party or listener.knows_party
+        if listener_learned_now:
+            self.knowledge_status[listener.id] = item["time_label"]
+            self.knowledge_edges.append(
+                KnowledgeEdge(
+                    source_agent_id=speaker.id,
+                    target_agent_id=listener.id,
+                    learned_at=item["time_label"],
+                    tick_count=self.tick_count,
+                )
+            )
+        speaker.current_action = "Sharing a socially relevant update"
+        listener.current_action = "Reacting to new social information"
+        speaker.last_utterance = decision.speaker_utterance
+        listener.last_utterance = decision.listener_utterance
+        speaker.reasoning_note = (
+            f"{speaker.name} knows the gathering and sees {listener.name} nearby, so the social information is shared."
+        )
+        listener.reasoning_note = (
+            f"{listener.name} received new social information from {speaker.name} during the encounter."
+        )
+        self._add_event(
+            decision.event_title,
+            decision.event_detail,
+            event_type="share" if decision.listener_learns_party else "conversation",
+            actor_ids=[speaker.id, listener.id],
+            location_id=item["location"].id,
+        )
+        self._remember(speaker, "conversation", decision.speaker_memory, item["location"].id, 0.84, [listener.id])
+        self._remember(listener, "conversation", decision.listener_memory, item["location"].id, 0.88, [speaker.id])
+        speaker.retrieved_memories = item["speaker_retrieved"]
+        speaker.retrieval_explanations = item["speaker_explanations"]
+        listener.retrieved_memories = item["listener_retrieved"]
+        listener.retrieval_explanations = item["listener_explanations"]
+
+    def _prepare_reflection_payload(self, time_label: str) -> tuple[str | None, list[dict]] | None:
         if self.story_flags["party_reflection_written"]:
-            return
+            return None
         if self._party_knowers_count() < 3:
-            return
+            return None
         shared_tick_count = self.story_flags.get("party_shared_tick_count")
         if shared_tick_count is None or self.tick_count <= shared_tick_count:
-            return
+            return None
 
         eligible_agents = [agent for agent in self.agents if agent.knows_party]
         importance_scores = {
@@ -418,38 +615,42 @@ class SimulationEngine:
             for agent in eligible_agents
         }
         if not eligible_agents or any(score < self.reflection_importance_threshold for score in importance_scores.values()):
-            return
+            return None
 
-        self.reflection_trigger_reason = (
+        reflection_reason = (
             f"Shared knowledge reached all agents and memory importance crossed "
             f"{self.reflection_importance_threshold:.2f}: "
             + ", ".join(f"{agent_id}={score:.2f}" for agent_id, score in importance_scores.items())
         )
-        self._write_party_reflections(time_label)
+        reflection_agents = [
+            {"agent_id": agent.id, "agent": deepcopy(agent)}
+            for agent in self.agents
+            if agent.knows_party
+        ]
+        return reflection_reason, reflection_agents
 
-    def _write_party_reflections(self, time_label: str) -> None:
+    def _apply_reflection_results(self, reflection_results: list[dict], time_label: str) -> None:
         self.story_flags["party_reflection_written"] = True
         reflection_actors: list[str] = []
-        for agent in self.agents:
-            if agent.knows_party:
-                reflection_actors.append(agent.id)
-                reflection_text = self._cognition.generate_reflection(agent, time_label)
-                reflection = self._memory(
-                    "reflection",
-                    reflection_text,
-                    self.current_time.strftime("%H:%M"),
-                    agent.current_location_id,
-                    0.93,
-                    ["alice", "bob", "carol"],
-                )
-                agent.reflections.insert(0, reflection)
-                agent.reflections = agent.reflections[:3]
-                agent.memory_bank.insert(0, reflection)
-                agent.recent_memories = agent.memory_bank[:5]
-                agent.current_action = "Reflecting on how the gathering has become shared town knowledge"
-                agent.reasoning_note = self.reflection_trigger_reason or (
-                    "A new high-level reflection was formed because the social information spread across the town."
-                )
+        for item in reflection_results:
+            agent = self._agent_by_id(item["agent_id"])
+            reflection_actors.append(agent.id)
+            reflection = self._memory(
+                "reflection",
+                item["text"],
+                self.current_time.strftime("%H:%M"),
+                agent.current_location_id,
+                0.93,
+                ["alice", "bob", "carol"],
+            )
+            agent.reflections.insert(0, reflection)
+            agent.reflections = agent.reflections[:3]
+            agent.memory_bank.insert(0, reflection)
+            agent.recent_memories = agent.memory_bank[:5]
+            agent.current_action = "Reflecting on how the gathering has become shared town knowledge"
+            agent.reasoning_note = self.reflection_trigger_reason or (
+                "A new high-level reflection was formed because the social information spread across the town."
+            )
         self._add_event(
             "Reflection formed",
             "The agents now treat Alice's gathering as a shared town event after memory importance crossed the reflection threshold.",
@@ -509,67 +710,6 @@ class SimulationEngine:
     def _location(self, location_id: str) -> Location:
         return next(location for location in self.locations if location.id == location_id)
 
-    def _handle_pair_interaction(self, first: Agent, second: Agent, location: Location, time_label: str) -> None:
-        if first.knows_party == second.knows_party:
-            return
-
-        speaker, listener = (first, second) if first.knows_party else (second, first)
-        pair_key = tuple(sorted([speaker.id, listener.id]))
-        if pair_key in self.shared_pairs:
-            return
-
-        speaker_retrieved, speaker_explanations = self._cognition.retrieve_memories_with_explanations(
-            agent=speaker,
-            active_plan=self._active_plan_item(speaker, time_label),
-            current_location=location,
-            nearby_agents=[listener],
-            time_label=time_label,
-        )
-        decision = self._cognition.generate_dialogue(
-            speaker=speaker,
-            listener=listener,
-            current_location=location,
-            retrieved_memories=speaker_retrieved,
-            time_label=time_label,
-        )
-        self.shared_pairs.add(pair_key)
-        listener_learned_now = decision.listener_learns_party and listener.id not in self.knowledge_status
-        listener.knows_party = decision.listener_learns_party or listener.knows_party
-        if listener_learned_now:
-            self.knowledge_status[listener.id] = time_label
-            self.knowledge_edges.append(
-                KnowledgeEdge(
-                    source_agent_id=speaker.id,
-                    target_agent_id=listener.id,
-                    learned_at=time_label,
-                    tick_count=self.tick_count,
-                )
-            )
-        speaker.current_action = "Sharing a socially relevant update"
-        listener.current_action = "Reacting to new social information"
-        speaker.last_utterance = decision.speaker_utterance
-        listener.last_utterance = decision.listener_utterance
-        speaker.reasoning_note = f"{speaker.name} knows the gathering and sees {listener.name} nearby, so the social information is shared."
-        listener.reasoning_note = f"{listener.name} received new social information from {speaker.name} during the encounter."
-        self._add_event(
-            decision.event_title,
-            decision.event_detail,
-            event_type="share" if decision.listener_learns_party else "conversation",
-            actor_ids=[speaker.id, listener.id],
-            location_id=location.id,
-        )
-        self._remember(speaker, "conversation", decision.speaker_memory, location.id, 0.84, [listener.id])
-        self._remember(listener, "conversation", decision.listener_memory, location.id, 0.88, [speaker.id])
-        speaker.retrieved_memories = speaker_retrieved
-        speaker.retrieval_explanations = speaker_explanations
-        listener.retrieved_memories, listener.retrieval_explanations = self._cognition.retrieve_memories_with_explanations(
-            agent=listener,
-            active_plan=self._active_plan_item(listener, time_label),
-            current_location=location,
-            nearby_agents=[speaker],
-            time_label=time_label,
-        )
-
     def _party_knowers_count(self) -> int:
         return sum(1 for agent in self.agents if agent.knows_party)
 
@@ -582,14 +722,6 @@ class SimulationEngine:
     def _refresh_recent_memories(self) -> None:
         for agent in self.agents:
             agent.recent_memories = agent.memory_bank[:5]
-
-    def _ensure_plans(self) -> None:
-        day_label = self.current_time.strftime("%Y-%m-%d")
-        for agent in self.agents:
-            generated = self._cognition.generate_plan(agent, self.locations, day_label)
-            if generated:
-                agent.plan = generated
-            agent.active_plan = self._active_plan_item(agent, self.current_time.strftime("%H:%M"))
 
     def _add_event(
         self,
@@ -614,6 +746,14 @@ class SimulationEngine:
 
     def _trim_logs(self) -> None:
         self.events = self.events[-30:]
+
+    def _prune_events_for_bookmark(self, target_time: str) -> None:
+        """书签跳转后，移除中间移动事件，只保留叙事关键事件。"""
+        self.events = [
+            event for event in self.events
+            if event.event_type != "move"
+            or event.time == target_time
+        ]
 
     def _snapshot_status(self) -> SnapshotStatus:
         if not self._snapshot_bundle:
@@ -659,6 +799,8 @@ class SimulationEngine:
 - Tick：`{evidence['tick_count']}`
 - 当前阶段：`{evidence['phase_label']}`
 - 仿真模式：`{evidence['simulation_mode']}`
+- LLM 供应商：`{evidence.get('llm_provider') or '未启用'}`
+- LLM 模型：`{evidence.get('llm_model') or '未启用'}`
 - LLM 状态：`{evidence['llm_status']}`
 - 记忆流条数：`{evidence['memory_stream_count']}`
 - 反思触发原因：`{evidence['reflection_trigger_reason'] or '尚未触发'}`

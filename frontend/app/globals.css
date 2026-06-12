@@ -918,6 +918,11 @@ button:focus-visible {
       transparent 74px
     ),
     linear-gradient(180deg, #d6ead7 0%, #bfd6c0 100%);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: 1fr;
+  gap: 12px;
+  padding: 16px;
 }
 
 .map-grid > * {
@@ -949,14 +954,23 @@ button:focus-visible {
 }
 
 .location-tile {
-  position: absolute;
-  width: min(190px, 42vw);
-  transform: translate(-50%, -50%);
   padding: 12px;
   border-radius: 18px;
   background: rgba(255, 251, 245, 0.9);
   border: 1px solid rgba(95, 78, 57, 0.14);
   box-shadow: var(--shadow-md);
+  transition: box-shadow 180ms ease, border-color 180ms ease;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.location-tile:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+.location-tile-selected {
+  border-color: rgba(191, 91, 53, 0.36);
+  box-shadow: var(--shadow-lg);
 }
 
 .location-topline {
@@ -1462,6 +1476,7 @@ button:focus-visible {
   }
 
   .map-grid {
+    grid-template-columns: repeat(2, 1fr);
     min-height: 680px;
   }
 }
@@ -1504,11 +1519,8 @@ button:focus-visible {
   }
 
   .map-grid {
+    grid-template-columns: 1fr;
     min-height: 980px;
-  }
-
-  .location-tile {
-    width: min(220px, 56vw);
   }
 
   .timeline-list li {

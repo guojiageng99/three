@@ -2,8 +2,39 @@ import { WorldState } from "@/lib/types";
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000").trim();
 
+export class ApiRequestError extends Error {
+  status: number;
+  detailStatus?: string;
+
+  constructor(message: string, status: number, detailStatus?: string) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.detailStatus = detailStatus;
+  }
+}
+
 export function apiUrl(path: string): string {
   return `${apiBase}${path}`;
+}
+
+async function readErrorMessage(response: Response): Promise<{ message: string; detailStatus?: string }> {
+  try {
+    const payload = (await response.json()) as { detail?: string | { message?: string; status?: string } };
+    if (typeof payload.detail === "string") {
+      return { message: payload.detail };
+    }
+    if (payload.detail && typeof payload.detail === "object") {
+      const message = payload.detail.message?.trim();
+      const detailStatus = payload.detail.status?.trim();
+      if (message) {
+        return { message, detailStatus };
+      }
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return { message: `Request failed: ${response.status}` };
 }
 
 export async function getSimulationState(): Promise<WorldState> {
@@ -11,15 +42,20 @@ export async function getSimulationState(): Promise<WorldState> {
     cache: "no-store",
   });
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    const { message } = await readErrorMessage(response);
+    throw new ApiRequestError(message, response.status);
   }
   return (await response.json()) as WorldState;
 }
 
 export async function postAction(path: string): Promise<void> {
-  await fetch(apiUrl(path), {
+  const response = await fetch(apiUrl(path), {
     method: "POST",
   });
+  if (!response.ok) {
+    const { message, detailStatus } = await readErrorMessage(response);
+    throw new ApiRequestError(message, response.status, detailStatus);
+  }
 }
 
 export async function postJson<TResponse>(path: string, body: unknown): Promise<TResponse> {
@@ -31,7 +67,8 @@ export async function postJson<TResponse>(path: string, body: unknown): Promise<
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    const { message, detailStatus } = await readErrorMessage(response);
+    throw new ApiRequestError(message, response.status, detailStatus);
   }
   return (await response.json()) as TResponse;
 }
