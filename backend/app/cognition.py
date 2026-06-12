@@ -5,6 +5,8 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+from time import perf_counter
 
 import httpx
 
@@ -43,6 +45,9 @@ class AgentCognition:
         self.base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
         self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
         self.enabled = self.simulation_mode == "llm" and bool(self.api_key)
+        self.timeout_seconds = self._float_env("LLM_TIMEOUT_SECONDS", 60.0)
+        self.debug_log_enabled = self._truthy_env("LLM_DEBUG_LOG")
+        self.log_file = self._resolve_log_file(os.getenv("LLM_LOG_FILE", "backend/logs/llm_debug.log"))
         self.last_llm_call_status = self._initial_llm_status()
 
     def generate_plan(self, agent: Agent, locations: list[Location], day_label: str) -> list[PlanItem] | None:
@@ -336,18 +341,47 @@ class AgentCognition:
                 {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
             ],
         }
+        request_url = f"{self.base_url}/chat/completions"
+        started_at = perf_counter()
         try:
-            with httpx.Client(timeout=12.0) as client:
-                response = client.post(f"{self.base_url}/chat/completions", headers=headers, json=body)
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                response = client.post(request_url, headers=headers, json=body)
                 response.raise_for_status()
                 payload = response.json()
-        except Exception:
+        except httpx.HTTPStatusError as exc:
+            self._write_llm_debug_log(
+                "request_failed",
+                request_url,
+                error_type=type(exc).__name__,
+                error=str(exc),
+                http_status=exc.response.status_code,
+                response_body=self._truncate(exc.response.text),
+                elapsed_ms=self._elapsed_ms(started_at),
+            )
+            self.last_llm_call_status = "fallback: llm_request_failed"
+            return None
+        except Exception as exc:
+            self._write_llm_debug_log(
+                "request_failed",
+                request_url,
+                error_type=type(exc).__name__,
+                error=str(exc),
+                elapsed_ms=self._elapsed_ms(started_at),
+            )
             self.last_llm_call_status = "fallback: llm_request_failed"
             return None
 
         try:
             content = payload["choices"][0]["message"]["content"]
-        except Exception:
+        except Exception as exc:
+            self._write_llm_debug_log(
+                "invalid_llm_response",
+                request_url,
+                error_type=type(exc).__name__,
+                error=str(exc),
+                response_body=self._truncate(json.dumps(payload, ensure_ascii=False)),
+                elapsed_ms=self._elapsed_ms(started_at),
+            )
             self.last_llm_call_status = "fallback: invalid_llm_response"
             return None
         if isinstance(content, list):
@@ -355,20 +389,94 @@ class AgentCognition:
         cleaned = self._strip_code_fence(str(content))
         try:
             parsed = json.loads(cleaned)
+            self._write_llm_debug_log("ok", request_url, response_parse="direct_json", elapsed_ms=self._elapsed_ms(started_at))
             self.last_llm_call_status = "ok"
             return parsed
         except json.JSONDecodeError:
             match = re.search(r"\{.*\}", cleaned, re.S)
             if not match:
+                self._write_llm_debug_log(
+                    "invalid_json",
+                    request_url,
+                    response_body=self._truncate(cleaned),
+                    parse_strategy="direct_json",
+                    elapsed_ms=self._elapsed_ms(started_at),
+                )
                 self.last_llm_call_status = "fallback: invalid_json"
                 return None
             try:
                 parsed = json.loads(match.group(0))
+                self._write_llm_debug_log(
+                    "ok",
+                    request_url,
+                    response_parse="json_object_extracted",
+                    elapsed_ms=self._elapsed_ms(started_at),
+                )
                 self.last_llm_call_status = "ok"
                 return parsed
             except json.JSONDecodeError:
+                self._write_llm_debug_log(
+                    "invalid_json",
+                    request_url,
+                    response_body=self._truncate(cleaned),
+                    parse_strategy="json_object_extracted",
+                    elapsed_ms=self._elapsed_ms(started_at),
+                )
                 self.last_llm_call_status = "fallback: invalid_json"
                 return None
+
+    def _truthy_env(self, name: str) -> bool:
+        return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def _float_env(self, name: str, default: float) -> float:
+        raw = os.getenv(name)
+        if raw is None or not raw.strip():
+            return default
+        try:
+            value = float(raw)
+        except ValueError:
+            return default
+        return value if value > 0 else default
+
+    def _resolve_log_file(self, raw_path: str | None) -> Path:
+        backend_root = Path(__file__).resolve().parents[1]
+        repo_root = backend_root.parent
+        path = Path((raw_path or "backend/logs/llm_debug.log").strip() or "backend/logs/llm_debug.log")
+        if path.is_absolute():
+            return path
+        if path.parts and path.parts[0].lower() == "backend":
+            return repo_root / path
+        return backend_root / path
+
+    def _write_llm_debug_log(self, status: str, request_url: str, **fields: object) -> None:
+        if not self.debug_log_enabled:
+            return
+        record = {
+            "time": datetime.now().isoformat(timespec="seconds"),
+            "status": status,
+            "url": request_url,
+            "model": self.model,
+            "simulation_mode": self.simulation_mode,
+            "api_key_present": bool(self.api_key),
+            "timeout_seconds": self.timeout_seconds,
+            "http_proxy_present": bool(os.getenv("HTTP_PROXY") or os.getenv("http_proxy")),
+            "https_proxy_present": bool(os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")),
+            **fields,
+        }
+        try:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_file.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            return
+
+    def _truncate(self, text: str, limit: int = 2000) -> str:
+        if len(text) <= limit:
+            return text
+        return text[:limit] + "...<truncated>"
+
+    def _elapsed_ms(self, started_at: float) -> int:
+        return int((perf_counter() - started_at) * 1000)
 
     def _initial_llm_status(self) -> str:
         if self.simulation_mode != "llm":
