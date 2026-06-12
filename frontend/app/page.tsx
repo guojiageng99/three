@@ -331,58 +331,125 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="hero">
-        <div className="hero-copy-block">
+      <section className="demo-intro">
+        <div>
           <p className="eyebrow">Generative Agents 演示</p>
-          <h1>观察一个小镇如何把个体记忆逐步演化成共享的社会行为。</h1>
-          <p className="hero-copy">
-            这个课程演示版保留了论文里最关键的闭环：计划、记忆、对话、信息传播与反思。第一次使用时，不需要先理解所有细节，只要按时间书签一步一步看，就能看明白整条传播链。
-          </p>
-          <div className="story-strip">
-            <span>先看 08:00：只有 Alice 知道聚会</span>
-            <span>再看 10:00：Alice 把信息告诉 Bob</span>
-            <span>最后看 14:30：系统形成共享反思</span>
-          </div>
+          <h1>小镇记忆传播工作台</h1>
         </div>
-        <div className="hero-actions panel control-panel">
-          <div className="control-panel-header">
-            <div>
-              <p className="eyebrow">演示控制</p>
-              <h2>控制小镇时间线</h2>
-            </div>
-            <span className={`status-pill ${connectionState}`}>{connectionStateLabel}</span>
-          </div>
-          <Controls
-            running={world?.running ?? false}
-            onStart={() => void runAction("开始自动演示中，出现关键事件后记得暂停。", () => postAction("/api/sim/start"))}
-            onPause={() => void runAction("已暂停，适合现在开始讲解。", () => postAction("/api/sim/pause"))}
-            onTick={() => void runAction("已请求单步推进，通常一秒内会看到状态更新。", () => postAction("/api/sim/tick"))}
-            onReset={() =>
-              void runAction("已重置到起点，建议先看 Alice 与 Bob 的第一次相遇。", () => postAction("/api/sim/reset"), INITIAL_BOOKMARK_KEY)
-            }
-            onSaveSnapshot={() => void runAction("正在保存当前快照，方便你稍后回到这个讲解节点。", () => saveSimulationSnapshot())}
-            onLoadSnapshot={() => void runAction("正在恢复快照，页面会回到你之前保存的状态。", () => loadSimulationSnapshot())}
-            onSetSpeed={(speedLabel) => void runAction(`已切换到 ${speedLabel}，如果讲解跟不上建议回到 1x 或使用单步推进。`, () => setSimulationSpeed(speedLabel))}
-            onJumpToBookmark={(bookmarkKey) =>
-              void runAction(
-                `正在切换到 ${world?.available_bookmarks.find((item) => item.key === bookmarkKey)?.label ?? "指定阶段"}。`,
-                () => jumpToSimulationBookmark(bookmarkKey),
-                bookmarkKey,
-              )
-            }
-            activeSpeedLabel={world?.active_speed_label ?? "1x"}
-            availableSpeedLabels={world?.available_speed_labels ?? ["0.5x", "1x", "2x"]}
-            availableBookmarks={world?.available_bookmarks ?? []}
-            snapshotExists={world?.snapshot_status.exists ?? false}
-            activeBookmarkKey={activeBookmarkKey}
-            actionFeedback={actionFeedback}
-            currentStepGuide={currentStepGuide}
-          />
-          <p className="control-note">
-            建议先点 <strong>08:00 初始态</strong>，再点 <strong>10:00 第一次传播</strong>。如果你只想最快讲清楚，一开始不要直接点开始演示。
-          </p>
-        </div>
+        <p>
+          首屏只保留演示需要的东西：时间控制、三位角色状态、地图位置和当前角色细节。先点单步推进，再看右侧角色状态变化。
+        </p>
       </section>
+
+      {world ? (
+        <section className="demo-console">
+          <div className="console-map-column">
+            <TownMap
+              agents={world.agents}
+              locations={world.locations}
+              selectedAgentId={selectedAgentId}
+              onSelectAgent={setSelectedAgentId}
+              phaseLabel={demoPhase?.label ?? null}
+            />
+          </div>
+          <aside className="console-rail">
+            <section className="panel control-panel">
+              <div className="control-panel-header">
+                <div>
+                  <p className="eyebrow">演示控制</p>
+                  <h2>时间线</h2>
+                </div>
+                <span className={`status-pill ${connectionState}`}>{connectionStateLabel}</span>
+              </div>
+              <Controls
+                running={world.running}
+                onStart={() => void runAction("开始自动演示中，出现关键事件后记得暂停。", () => postAction("/api/sim/start"))}
+                onPause={() => void runAction("已暂停，适合现在开始讲解。", () => postAction("/api/sim/pause"))}
+                onTick={() => void runAction("已请求单步推进，通常一秒内会看到状态更新。", () => postAction("/api/sim/tick"))}
+                onReset={() =>
+                  void runAction("已重置到起点，建议先看 Alice 与 Bob 的第一次相遇。", () => postAction("/api/sim/reset"), INITIAL_BOOKMARK_KEY)
+                }
+                onSaveSnapshot={() => void runAction("正在保存当前快照，方便你稍后回到这个讲解节点。", () => saveSimulationSnapshot())}
+                onLoadSnapshot={() => void runAction("正在恢复快照，页面会回到你之前保存的状态。", () => loadSimulationSnapshot())}
+                onSetSpeed={(speedLabel) =>
+                  void runAction(`已切换到 ${speedLabel}，如果讲解跟不上建议回到 1x 或使用单步推进。`, () => setSimulationSpeed(speedLabel))
+                }
+                onJumpToBookmark={(bookmarkKey) =>
+                  void runAction(
+                    `正在切换到 ${world.available_bookmarks.find((item) => item.key === bookmarkKey)?.label ?? "指定阶段"}。`,
+                    () => jumpToSimulationBookmark(bookmarkKey),
+                    bookmarkKey,
+                  )
+                }
+                activeSpeedLabel={world.active_speed_label}
+                availableSpeedLabels={world.available_speed_labels}
+                availableBookmarks={world.available_bookmarks}
+                snapshotExists={world.snapshot_status.exists}
+                activeBookmarkKey={activeBookmarkKey}
+                actionFeedback={actionFeedback}
+                currentStepGuide={currentStepGuide}
+              />
+            </section>
+
+            <section className="panel agent-overview-panel">
+              <div className="agent-overview-header">
+                <div>
+                  <p className="eyebrow">三人状态</p>
+                  <h2>角色一眼看完</h2>
+                </div>
+                <strong>{world.time_label}</strong>
+              </div>
+              <div className="agent-overview-list">
+                {world.agents.map((agent) => {
+                  const location = world.locations.find((item) => item.id === agent.current_location_id);
+                  return (
+                    <button
+                      type="button"
+                      key={agent.id}
+                      className={selectedAgentId === agent.id ? "agent-overview-card selected" : "agent-overview-card"}
+                      onClick={() => setSelectedAgentId(agent.id)}
+                    >
+                      <span className="agent-overview-color" style={{ backgroundColor: agent.color }} aria-hidden="true" />
+                      <span>
+                        <strong>{agent.name}</strong>
+                        <small>{formatLocationName(location?.name ?? "")}</small>
+                      </span>
+                      <em>{agent.knows_party ? "已知聚会" : "未知聚会"}</em>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <Sidebar
+              agent={selectedAgent}
+              currentLocationName={selectedLocation?.name ?? null}
+              events={world.events}
+              knowledgeEdges={world.knowledge_edges}
+              knowledgeStatus={world.knowledge_status}
+              dayLabel={world.day_label}
+              timeLabel={world.time_label}
+              tickCount={world.tick_count}
+              simulationMode={world.simulation_mode}
+              llmEnabled={world.llm_enabled}
+              llmModel={world.llm_model}
+              lastLlmCallStatus={world.last_llm_call_status}
+              memoryStreamCount={world.memory_stream_count}
+              reflectionTriggerReason={world.reflection_trigger_reason}
+              activeSpeedLabel={world.active_speed_label}
+              snapshotStatus={world.snapshot_status}
+              latestEvent={latestEvent}
+              phaseLabel={demoPhase?.label ?? null}
+              presenterCue={demoPhase?.presenterCue ?? null}
+              nextFocus={demoPhase?.nextFocus ?? null}
+            />
+          </aside>
+        </section>
+      ) : (
+        <section className="loading-card">
+          <p>正在等待后端仿真状态。如果这里长时间不动，请先确认后端已经运行在 127.0.0.1:8000。</p>
+        </section>
+      )}
 
       {world && demoPhase ? (
         <section className="guide-grid" aria-label="Presentation guidance">
@@ -460,43 +527,6 @@ export default function HomePage() {
         </section>
       ) : null}
 
-      {world ? (
-        <section className="content-grid">
-          <TownMap
-            agents={world.agents}
-            locations={world.locations}
-            selectedAgentId={selectedAgentId}
-            onSelectAgent={setSelectedAgentId}
-            phaseLabel={demoPhase?.label ?? null}
-          />
-          <Sidebar
-            agent={selectedAgent}
-            currentLocationName={selectedLocation?.name ?? null}
-            events={world.events}
-            knowledgeEdges={world.knowledge_edges}
-            knowledgeStatus={world.knowledge_status}
-            dayLabel={world.day_label}
-            timeLabel={world.time_label}
-            tickCount={world.tick_count}
-            simulationMode={world.simulation_mode}
-            llmEnabled={world.llm_enabled}
-            llmModel={world.llm_model}
-            lastLlmCallStatus={world.last_llm_call_status}
-            memoryStreamCount={world.memory_stream_count}
-            reflectionTriggerReason={world.reflection_trigger_reason}
-            activeSpeedLabel={world.active_speed_label}
-            snapshotStatus={world.snapshot_status}
-            latestEvent={latestEvent}
-            phaseLabel={demoPhase?.label ?? null}
-            presenterCue={demoPhase?.presenterCue ?? null}
-            nextFocus={demoPhase?.nextFocus ?? null}
-          />
-        </section>
-      ) : (
-        <section className="loading-card">
-          <p>正在等待后端仿真状态。如果这里长时间不动，请先确认后端已经运行在 127.0.0.1:8000。</p>
-        </section>
-      )}
     </main>
   );
 }
